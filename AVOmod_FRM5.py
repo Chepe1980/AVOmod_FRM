@@ -6,7 +6,7 @@ import matplotlib.colors as colors
 from pyavo.seismodel import wavelet
 
 # Set page config
-st.set_page_config(layout="wide", page_title="Fluid Susbtitution, Rock Physics & AVO Modeling")
+st.set_page_config(layout="wide", page_title="Rock Physics & AVO Modeling")
 
 # Title and description
 st.title("Rock Physics & AVO Modeling Tool")
