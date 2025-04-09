@@ -270,10 +270,6 @@ vp_data = [round(vp_u.mean(), 2), round(vp_m.mean(), 2), round(vp_l.mean(), 2)]
 vs_data = [round(vs_u.mean(), 2), round(vs_m.mean(), 2), round(vs_l.mean(), 2)]
 rho_data = [round(rho_u.mean(), 2), round(rho_m.mean(), 2), round(rho_l.mean(), 2)]
 
-        st.write(Vp: {vp_data}")
-        st.write(Vs: {vs_data}")
-        st.write(Density: {rho_data}")
-
         # Create model
         nangles = tw.n_angles(min_angle, max_angle)
         rc_zoep = []
