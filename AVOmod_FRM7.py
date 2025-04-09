@@ -203,6 +203,8 @@ if uploaded_file is not None:
     ax2[3].scatter(logs.IP_FRMG, logs.VPVS_FRMG, 20, logs.LFC_G, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
     ax2[0].set_xlim(3000,16000); ax2[0].set_ylim(1.5,3)
     ax2[0].set_title('Original Data')
+    ax2[0].set_xlabel("Ip [m/s*g/cc]")
+    ax2[0].set_ylabel("Vp/Vs [unitless]")
     ax2[1].set_title('FRM to Brine')
     ax2[1].set_xlabel("Ip [m/s*g/cc]")
     ax2[1].set_ylabel("Vp/Vs [unitless]")
