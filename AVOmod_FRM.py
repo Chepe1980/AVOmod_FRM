@@ -271,9 +271,9 @@ vs_data = [round(vs_u.mean(), 2), round(vs_m.mean(), 2), round(vs_l.mean(), 2)]
 rho_data = [round(rho_u.mean(), 2), round(rho_m.mean(), 2), round(rho_l.mean(), 2)]
 
         # Create model
-        nangles = tw.n_angles(min_angle, max_angle)
-        rc_zoep = []
-        theta1 = []
+nangles = tw.n_angles(min_angle, max_angle)
+rc_zoep = []
+theta1 = []
 
         for angle in range(0, nangles):
             theta1_samp, rc_1, rc_2 = tw.calc_theta_rc(theta1_min=0, theta1_step=1, 
