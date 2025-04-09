@@ -62,7 +62,7 @@ if uploaded_file is not None:
     # Read data
     logs = pd.read_csv(uploaded_file)
     
-    # Depth range selection (won't reinitialize the app)
+    # Depth range selection
     st.header("Well Log Visualization")
     ztop, zbot = st.slider(
         "Select Depth Range", 
@@ -207,7 +207,7 @@ if uploaded_file is not None:
     ztopm = ztop + (zbot - ztop) * 0.4  # Middle zone starts at 40% of range
     ztopl = ztop + (zbot - ztop) * 0.7  # Lower zone starts at 70% of range
     
-    # AVO for each case
+    # AVO cases
     cases = ['Brine', 'Oil', 'Gas']
     case_data = {
         'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
@@ -233,22 +233,22 @@ if uploaded_file is not None:
         rc = a*(dvp/vp_avg) + b*(dvs/vs_avg) + c*(drho/rho_avg)
         return rc
     
-    # Generate wavelet once
+    # Generate wavelet
     wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
     t_samp = np.arange(0, 0.5, 0.0001)  # Time samples
     t_lower = 0.2  # Fixed time for lower interface
     
     # Create figure for AVO results
-    fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(12, 6))
+    fig3, ax3 = plt.subplots(1, 2, figsize=(12, 6))
     
     # Wavelet plot
-    ax3a.plot(wlt_time, wlt_amp)
-    ax3a.set_title(f"Ricker Wavelet ({wavelet_freq} Hz)")
-    ax3a.set_xlabel("Time (s)")
-    ax3a.set_ylabel("Amplitude")
-    ax3a.grid(True)
+    ax3[0].plot(wlt_time, wlt_amp)
+    ax3[0].set_title(f"Ricker Wavelet ({wavelet_freq} Hz)")
+    ax3[0].set_xlabel("Time (s)")
+    ax3[0].set_ylabel("Amplitude")
+    ax3[0].grid(True)
     
-    # Process each case
+    # Process each case for AVO curves
     angles = np.arange(min_angle, max_angle + 1, 1)
     
     for case in cases:
@@ -262,7 +262,7 @@ if uploaded_file is not None:
         vs_sh = logs.loc[logs.VSH > 0.5, 'VS'].values.mean()
         rho_sh = logs.loc[logs.VSH > 0.5, 'RHO'].values.mean()
         
-        # Calculate reflection coefficients for lower interface only
+        # Calculate reflection coefficients for lower interface
         rc_lower = []
         for angle in angles:
             rc_lower.append(calculate_reflection_coefficients(
@@ -270,16 +270,61 @@ if uploaded_file is not None:
             ))
         
         # Plot AVO curve
-        ax3b.plot(angles, rc_lower, f"{case_data[case]['color']}-", label=f"{case}")
+        ax3[1].plot(angles, rc_lower, f"{case_data[case]['color']}-", label=f"{case}")
     
     # Finalize AVO plot
-    ax3b.set_title("AVO Response (Lower Interface Only)")
-    ax3b.set_xlabel("Angle (degrees)")
-    ax3b.set_ylabel("Reflection Coefficient")
-    ax3b.grid(True)
-    ax3b.legend()
+    ax3[1].set_title("AVO Response (Lower Interface)")
+    ax3[1].set_xlabel("Angle (degrees)")
+    ax3[1].set_ylabel("Reflection Coefficient")
+    ax3[1].grid(True)
+    ax3[1].legend()
     
     st.pyplot(fig3)
+
+    # Create synthetic gathers for each case
+    st.header("Synthetic Seismic Gathers")
+    
+    # Create figure with subplots for each case
+    fig4, ax4 = plt.subplots(1, 3, figsize=(18, 6))
+    
+    for idx, case in enumerate(cases):
+        # Get properties for lower zone and shale below
+        vp_m = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbot)), case_data[case]['vp']].values.mean()
+        vs_m = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbot)), case_data[case]['vs']].values.mean()
+        rho_m = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbot)), case_data[case]['rho']].values.mean()
+        
+        # Shale properties
+        vp_sh = logs.loc[logs.VSH > 0.5, 'VP'].values.mean()
+        vs_sh = logs.loc[logs.VSH > 0.5, 'VS'].values.mean()
+        rho_sh = logs.loc[logs.VSH > 0.5, 'RHO'].values.mean()
+        
+        # Generate synthetic gather
+        syn_gather = []
+        for angle in angles:
+            # Calculate reflection coefficient
+            rc = calculate_reflection_coefficients(vp_m, vp_sh, vs_m, vs_sh, rho_m, rho_sh, angle)
+            
+            # Create reflectivity series
+            rc_series = np.zeros(len(t_samp))
+            idx_lower = np.argmin(np.abs(t_samp - t_lower))
+            rc_series[idx_lower] = rc
+            
+            # Convolve with wavelet
+            syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+            syn_gather.append(syn_trace)
+        
+        syn_gather = np.array(syn_gather)
+        
+        # Plot the gather
+        extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+        ax4[idx].imshow(syn_gather.T, aspect='auto', extent=extent,
+                       cmap='seismic', vmin=-np.max(np.abs(syn_gather)), vmax=np.max(np.abs(syn_gather)))
+        ax4[idx].set_title(f"{case} Case")
+        ax4[idx].set_xlabel("Angle (degrees)")
+        ax4[idx].set_ylabel("Time (s)")
+        ax4[idx].set_ylim(0.3, 0.1)  # Zoom in on the reflection
+    
+    st.pyplot(fig4)
 
 elif uploaded_file is None:
     st.info("Please upload a CSV file to begin analysis")
