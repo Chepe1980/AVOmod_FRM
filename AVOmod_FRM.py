@@ -274,7 +274,7 @@ if run_analysis and uploaded_file is not None:
         st.write(f"Average Density: {rho_data}")
 
         # Create model
-        nangles = tp.n_angles(min_angle, max_angle)
+        nangles = tw.n_angles(min_angle, max_angle)
         rc_zoep = []
         theta1 = []
 
