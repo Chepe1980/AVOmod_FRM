@@ -282,8 +282,8 @@ for angle in range(0, nangles):
             rc_zoep.append([rc_1[0, 0], rc_2[0, 0]])
 
         # Generate wavelet
-           wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
-           t_samp = tw.time_samples(t_min=0, t_max=0.5)
+wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
+t_samp = tw.time_samples(t_min=0, t_max=0.5)
 
         # Generate synthetic
           syn_zoep = []
