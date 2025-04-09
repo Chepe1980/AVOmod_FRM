@@ -114,5 +114,5 @@ with st.sidebar:
     
     st.pyplot(fig4)
 
-elif uploaded_file is None:
+else uploaded_file is None:
     st.info("Please upload a CSV file to begin analysis")
