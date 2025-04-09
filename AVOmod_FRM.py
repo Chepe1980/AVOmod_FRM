@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import matplotlib.colors as colors
-from pyavo.seismodel import tuning_wedge as tw
 from pyavo.seismodel import wavelet
 
 # Set page config
@@ -249,60 +248,93 @@ if run_analysis and uploaded_file is not None:
         'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG'}
     }
     
+    def calculate_reflection_coefficients(vp1, vp2, vs1, vs2, rho1, rho2, angle):
+        """Calculate PP reflection coefficients using Aki-Richards approximation"""
+        theta = np.radians(angle)
+        vp_avg = (vp1 + vp2)/2
+        vs_avg = (vs1 + vs2)/2
+        rho_avg = (rho1 + rho2)/2
+        
+        dvp = vp2 - vp1
+        dvs = vs2 - vs1
+        drho = rho2 - rho1
+        
+        a = 0.5 * (1 + np.tan(theta)**2)
+        b = -4 * (vs_avg**2/vp_avg**2) * np.sin(theta)**2
+        c = 0.5 * (1 - 4 * (vs_avg**2/vp_avg**2) * np.sin(theta)**2)
+        
+        rc = a*(dvp/vp_avg) + b*(dvs/vs_avg) + c*(drho/rho_avg)
+        return rc
+    
     for case in cases:
         st.subheader(f"{case} Case AVO Modeling")
         
         # Get average properties for each zone
-vp_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vp']].values
-vs_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vs']].values
-rho_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['rho']].values
+        vp_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vp']].values
+        vs_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vs']].values
+        rho_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['rho']].values
 
-vp_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vp']].values
-vs_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vs']].values
-rho_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['rho']].values
+        vp_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vp']].values
+        vs_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vs']].values
+        rho_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['rho']].values
 
-vp_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vp']].values
-vs_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vs']].values
-rho_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['rho']].values
+        vp_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vp']].values
+        vs_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vs']].values
+        rho_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['rho']].values
 
-# Round averages to 2 decimal places (adjust as needed)
-vp_data = [round(vp_u.mean(), 2), round(vp_m.mean(), 2), round(vp_l.mean(), 2)]
-vs_data = [round(vs_u.mean(), 2), round(vs_m.mean(), 2), round(vs_l.mean(), 2)]
-rho_data = [round(rho_u.mean(), 2), round(rho_m.mean(), 2), round(rho_l.mean(), 2)]
+        vp_data = [vp_u.mean(), vp_m.mean(), vp_l.mean()]
+        vs_data = [vs_u.mean(), vs_m.mean(), vs_l.mean()]
+        rho_data = [rho_u.mean(), rho_m.mean(), rho_l.mean()]
 
-        # Create model
-nangles = tw.n_angles(min_angle, max_angle)
-rc_zoep = []
-theta1 = []
+        st.write(f"Average Vp: {[round(x,2) for x in vp_data]}")
+        st.write(f"Average Vs: {[round(x,2) for x in vs_data]}")
+        st.write(f"Average Density: {[round(x,2) for x in rho_data]}")
 
-for angle in range(0, nangles):
-            theta1_samp, rc_1, rc_2 = tw.calc_theta_rc(theta1_min=0, theta1_step=1, 
-                                                      vp=vp_data, vs=vs_data, rho=rho_data, ang=angle)
-            theta1.append(theta1_samp)
-            rc_zoep.append([rc_1[0, 0], rc_2[0, 0]])
+        # Create angle range
+        angles = np.arange(min_angle, max_angle + 1, 1)
+        nangles = len(angles)
+        
+        # Calculate reflection coefficients for each interface
+        rc_upper = []  # Upper interface (1-2)
+        rc_lower = []  # Lower interface (2-3)
+        
+        for angle in angles:
+            rc_upper.append(calculate_reflection_coefficients(
+                vp_data[0], vp_data[1], vs_data[0], vs_data[1], rho_data[0], rho_data[1], angle
+            ))
+            rc_lower.append(calculate_reflection_coefficients(
+                vp_data[1], vp_data[2], vs_data[1], vs_data[2], rho_data[1], rho_data[2], angle
+            ))
 
         # Generate wavelet
-wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
-t_samp = tw.time_samples(t_min=0, t_max=0.5)
-
-        # Generate synthetic
-          syn_zoep = []
-          lyr_times = []
-for angle in range(0, nangles):
-            z_int = tw.int_depth(h_int=[500.0], thickness=10)
-            t_int = tw.calc_times(z_int, vp_data)
-            lyr_times.append(t_int)
-            rc = tw.mod_digitize(rc_zoep[angle], t_int, t_samp)
-            s = tw.syn_seis(ref_coef=rc, wav_amp=wlt_amp)
-            syn_zoep.append(s)
-
-        syn_zoep = np.array(syn_zoep)
-        rc_zoep = np.array(rc_zoep)
-        t = np.array(t_samp)
-        lyr_times = np.array(lyr_times)
-
+        wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
+        t_samp = np.arange(0, 0.5, 0.0001)  # Time samples
+        
+        # Generate synthetic seismograms
+        syn_data = []
+        t_upper = 0.15  # Time for upper interface
+        t_lower = 0.25  # Time for lower interface
+        
+        for angle in range(nangles):
+            # Create reflectivity series
+            rc_series = np.zeros(len(t_samp))
+            
+            # Find nearest time samples
+            idx_upper = np.argmin(np.abs(t_samp - t_upper))
+            idx_lower = np.argmin(np.abs(t_samp - t_lower))
+            
+            # Add reflection coefficients
+            rc_series[idx_upper] = rc_upper[angle]
+            rc_series[idx_lower] = rc_lower[angle]
+            
+            # Convolve with wavelet
+            syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+            syn_data.append(syn_trace)
+        
+        syn_data = np.array(syn_data)
+        
         # Plot results
-        fig3, (ax3a, ax3b) = plt.subplots(1, 2, figsize=(12, 6))
+        fig3, (ax3a, ax3b, ax3c) = plt.subplots(1, 3, figsize=(18, 6))
         
         # Wavelet plot
         ax3a.plot(wlt_time, wlt_amp)
@@ -311,20 +343,23 @@ for angle in range(0, nangles):
         ax3a.set_ylabel("Amplitude")
         ax3a.grid(True)
         
-        # AVO gather plot
-        excursion = 2
-        thickness = 80
-        min_plot_time = 0.10
-        max_plot_time = 0.25
+        # AVO curve plot
+        ax3b.plot(angles, rc_upper, 'r-', label='Upper Interface')
+        ax3b.plot(angles, rc_lower, 'b-', label='Lower Interface')
+        ax3b.set_title("AVO Curves")
+        ax3b.set_xlabel("Angle (degrees)")
+        ax3b.set_ylabel("Reflection Coefficient")
+        ax3b.grid(True)
+        ax3b.legend()
         
-        lyr1_indx, lyr2_indx = tw.layer_index(lyr_times)
-        vp_dig, vs_dig, rho_dig = tw.t_domain(t=t, vp=vp_data, vs=vs_data, rho=rho_data, 
-                                             lyr1_index=lyr1_indx, lyr2_index=lyr2_indx)
-        
-        tw.syn_angle_gather(min_plot_time, max_plot_time, lyr_times, thickness, 
-                           syn_zoep[:, lyr1_indx], syn_zoep[:, lyr2_indx],
-                           vp_dig, vs_dig, rho_dig, syn_zoep, rc_zoep, t, excursion, ax=ax3b)
-        ax3b.set_title(f"{case} Case Angle Gather")
+        # Angle gather plot
+        extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+        ax3c.imshow(syn_data.T, aspect='auto', extent=extent, 
+                   cmap='seismic', vmin=-np.max(np.abs(syn_data)), vmax=np.max(np.abs(syn_data)))
+        ax3c.set_title(f"{case} Case Angle Gather")
+        ax3c.set_xlabel("Angle (degrees)")
+        ax3c.set_ylabel("Time (s)")
+        ax3c.set_ylim(0.3, 0.1)  # Zoom in on the reflections
         
         st.pyplot(fig3)
 
