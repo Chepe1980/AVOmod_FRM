@@ -253,28 +253,29 @@ if run_analysis and uploaded_file is not None:
         st.subheader(f"{case} Case AVO Modeling")
         
         # Get average properties for each zone
-        vp_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vp']].values
-        vs_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vs']].values
-        rho_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['rho']].values
+vp_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vp']].values
+vs_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['vs']].values
+rho_u = logs.loc[((logs.DEPTH >= ztopu) & (logs.DEPTH <= zbotu)), case_data[case]['rho']].values
 
-        vp_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vp']].values
-        vs_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vs']].values
-        rho_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['rho']].values
+vp_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vp']].values
+vs_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['vs']].values
+rho_m = logs.loc[((logs.DEPTH >= ztopm) & (logs.DEPTH <= zbotm)), case_data[case]['rho']].values
 
-        vp_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vp']].values
-        vs_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vs']].values
-        rho_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['rho']].values
+vp_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vp']].values
+vs_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['vs']].values
+rho_l = logs.loc[((logs.DEPTH >= ztopl) & (logs.DEPTH <= zbotl)), case_data[case]['rho']].values
 
-        vp_data = [vp_u.mean(), vp_m.mean(), vp_l.mean()]
-        vs_data = [vs_u.mean(), vs_m.mean(), vs_l.mean()]
-        rho_data = [rho_u.mean(), rho_m.mean(), rho_l.mean()]
+# Round averages to 2 decimal places (adjust as needed)
+vp_data = [round(vp_u.mean(), 2), round(vp_m.mean(), 2), round(vp_l.mean(), 2)]
+vs_data = [round(vs_u.mean(), 2), round(vs_m.mean(), 2), round(vs_l.mean(), 2)]
+rho_data = [round(rho_u.mean(), 2), round(rho_m.mean(), 2), round(rho_l.mean(), 2)]
 
         st.write(f"Average Vp: {vp_data}")
         st.write(f"Average Vs: {vs_data}")
         st.write(f"Average Density: {rho_data}")
 
         # Create model
-                    nangles = tw.n_angles(min_angle, max_angle)
+        nangles = tw.n_angles(min_angle, max_angle)
         rc_zoep = []
         theta1 = []
 
