@@ -612,7 +612,3 @@ if uploaded_file is not None:
                     st.warning("Some exports completed with errors")
             else:
                 st.warning("No plots selected for export")
-
-
-        
-               
