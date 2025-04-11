@@ -551,6 +551,8 @@ if uploaded_file is not None:
         
         plt.tight_layout()
         st.pyplot(fig4)
+
+        
                 # Export functionality
         st.header("Export Results")
         st.markdown(get_table_download_link(logs), unsafe_allow_html=True)
