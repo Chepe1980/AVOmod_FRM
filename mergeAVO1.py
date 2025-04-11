@@ -579,4 +579,4 @@ if uploaded_file is not None:
                     st.download_button(
                         label=f"Download {plot_name}",
                         data=buf,
-                        file_name="2d_crossplot"
+                        file_name="2d_crossplot")
