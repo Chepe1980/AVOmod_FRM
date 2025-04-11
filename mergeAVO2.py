@@ -203,25 +203,23 @@ def process_data(uploaded_file, model_choice, **kwargs):
     tmp, k_fl, tmp, tmp, tmp, tmp = vrh([water, hc], [k_b, k_o], [0, 0])
     rho_fl = water*rho_b + hc*rho_o
 
-    # Select model function
+    # Select model function and prepare arguments
+    base_args = [logs.VP, logs.VS, logs.RHO, rho_fl, k_fl]
+    
     if model_choice == "Gassmann's Fluid Substitution":
-        model_func = lambda *args: frm(*args[:9])
+        def model_func(rho_f2, k_f2):
+            return frm(*base_args, rho_f2, k_f2, k0, mu0, logs.PHI)
     elif model_choice == "Critical Porosity Model (Nur)":
-        model_func = lambda *args: critical_porosity_model(*args[:10], phi_c=kwargs['critical_porosity'])
+        def model_func(rho_f2, k_f2):
+            return critical_porosity_model(*base_args, rho_f2, k_f2, k0, mu0, logs.PHI, kwargs['critical_porosity'])
     elif model_choice == "Contact Theory (Hertz-Mindlin)":
-        model_func = lambda *args: hertz_mindlin_model(*args[:10], Cn=kwargs['coordination_number'], P=kwargs['effective_pressure'])
+        def model_func(rho_f2, k_f2):
+            return hertz_mindlin_model(*base_args, rho_f2, k_f2, k0, mu0, logs.PHI, kwargs['coordination_number'], kwargs['effective_pressure'])
 
     # Apply selected model
-    common_args = [logs.VP, logs.VS, logs.RHO, rho_fl, k_fl, rho_b, k_b, k0, mu0, logs.PHI]
-    vpb, vsb, rhob, kb = model_func(*common_args)
-    
-    common_args[6] = rho_o  # Change to oil density
-    common_args[7] = k_o    # Change to oil bulk modulus
-    vpo, vso, rhoo, ko = model_func(*common_args)
-    
-    common_args[6] = rho_g  # Change to gas density
-    common_args[7] = k_g    # Change to gas bulk modulus
-    vpg, vsg, rhog, kg = model_func(*common_args)
+    vpb, vsb, rhob, kb = model_func(rho_b, k_b)
+    vpo, vso, rhoo, ko = model_func(rho_o, k_o)
+    vpg, vsg, rhog, kg = model_func(rho_g, k_g)
 
     # Litho-fluid classification
     brine_sand = ((logs.VSH <= sand_cutoff) & (logs.SW >= 0.65))
