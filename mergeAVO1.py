@@ -602,4 +602,13 @@ if uploaded_file is not None:
                     results.append(f"✓ Successfully exported {plot_name}")
                 else:
                     results.append(f"✗ Failed to export {plot_name}: {error}")
-
+            
+            # Display results
+            st.write("\n".join(results))
+            
+            if all("✓" in result for result in results):
+                st.success("All exports completed successfully!")
+            elif any("✓" in result for result in results):
+                st.warning("Some exports completed with errors")
+            else:
+                st.error("All exports failed")
