@@ -551,6 +551,8 @@ if uploaded_file is not None:
         
         plt.tight_layout()
         st.pyplot(fig4)
+
+
         # Export functionality
         st.header("Export Results")
         st.markdown(get_table_download_link(logs), unsafe_allow_html=True)
@@ -562,55 +564,60 @@ if uploaded_file is not None:
         )
         
         if st.button("Export Selected Plots"):
-            try:
-                for plot_name in plot_export_options:
-                    buf = BytesIO()
-                    try:
-                        if plot_name == "Well Log Visualization":
-                            fig.savefig(buf, format="png", dpi=300)
-                            st.download_button(
-                                label=f"Download {plot_name}",
-                                data=buf.getvalue(),
-                                file_name="well_log_visualization.png",
-                                mime="image/png"
-                            )
-                        elif plot_name == "2D Crossplots":
-                            fig2.savefig(buf, format="png", dpi=300)
-                            st.download_button(
-                                label=f"Download {plot_name}",
-                                data=buf.getvalue(),
-                                file_name="2d_crossplots.png",
-                                mime="image/png"
-                            )
-                        elif plot_name == "3D Crossplot" and show_3d_crossplot:
-                            fig3d.savefig(buf, format="png", dpi=300)
-                            st.download_button(
-                                label=f"Download {plot_name}",
-                                data=buf.getvalue(),
-                                file_name="3d_crossplot.png",
-                                mime="image/png"
-                            )
-                        elif plot_name == "Histograms" and show_histograms:
-                            fig_hist.savefig(buf, format="png", dpi=300)
-                            st.download_button(
-                                label=f"Download {plot_name}",
-                                data=buf.getvalue(),
-                                file_name="histograms.png",
-                                mime="image/png"
-                            )
-                        elif plot_name == "AVO Analysis":
-                            fig3.savefig(buf, format="png", dpi=300)
-                            st.download_button(
-                                label=f"Download {plot_name}",
-                                data=buf.getvalue(),
-                                file_name="avo_analysis.png",
-                                mime="image/png"
-                            )
-                    except Exception as e:
-                        st.error(f"Failed to export {plot_name}: {str(e)}")
-                        continue
-            except Exception as e:
-                st.error(f"Export failed: {str(e)}")
-            else:
-                st.success("Export completed successfully!")
+            export_success = True
+            for plot_name in plot_export_options:
+                buf = BytesIO()
+                try:
+                    if plot_name == "Well Log Visualization":
+                        fig.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name="well_log_visualization.png",
+                            mime="image/png"
+                        )
+                    elif plot_name == "2D Crossplots":
+                        fig2.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name="2d_crossplots.png",
+                            mime="image/png"
+                        )
+                    elif plot_name == "3D Crossplot" and show_3d_crossplot:
+                        fig3d.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name="3d_crossplot.png",
+                            mime="image/png"
+                        )
+                    elif plot_name == "Histograms" and show_histograms:
+                        fig_hist.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name="histograms.png",
+                            mime="image/png"
+                        )
+                    elif plot_name == "AVO Analysis":
+                        fig3.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name="avo_analysis.png",
+                            mime="image/png"
+                        )
+                except Exception as e:
+                    st.error(f"Failed to export {plot_name}: {str(e)}")
+                    export_success = False
+                    continue
+            
+            if export_success and plot_export_options:
+                st.success("All selected plots exported successfully!")
+            elif not export_success:
+                st.warning("Some plots failed to export. See error messages above.")
 
+
+        
+        
