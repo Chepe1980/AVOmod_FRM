@@ -605,10 +605,3 @@ if uploaded_file is not None:
                 st.success("All exports completed successfully!")
             elif export_results:
                 st.warning("Some exports completed with errors")
-
-
-
-
-
-
-        
