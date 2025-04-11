@@ -581,4 +581,27 @@ if uploaded_file is not None:
                         file_name="2d_crossplots.png",
                         mime="image/png"
                     )
-                elif plot_name == "3
+                elif plot_name == "3D Crossplot" and show_3d_crossplot:
+                    fig3d.savefig(buf, format="png", dpi=300)
+                    st.download_button(
+                        label=f"Download {plot_name}",
+                        data=buf.getvalue(),
+                        file_name="3d_crossplot.png",
+                        mime="image/png"
+                    )
+                elif plot_name == "Histograms" and show_histograms:
+                    fig_hist.savefig(buf, format="png", dpi=300)
+                    st.download_button(
+                        label=f"Download {plot_name}",
+                        data=buf.getvalue(),
+                        file_name="histograms.png",
+                        mime="image/png"
+                    )
+                elif plot_name == "AVO Analysis":
+                    fig3.savefig(buf, format="png", dpi=300)
+                    st.download_button(
+                        label=f"Download {plot_name}",
+                        data=buf.getvalue(),
+                        file_name="avo_analysis.png",
+                        mime="image/png"
+                    )
