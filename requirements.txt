@@ -3,7 +3,7 @@ pyavo
 numpy
 pandas
 matplotlib
-bokeh
+streamlit-bokeh
 
 
 
