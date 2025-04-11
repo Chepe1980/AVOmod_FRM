@@ -552,8 +552,7 @@ if uploaded_file is not None:
         plt.tight_layout()
         st.pyplot(fig4)
 
-        
-                # Export functionality
+             # Export functionality
         st.header("Export Results")
         st.markdown(get_table_download_link(logs), unsafe_allow_html=True)
         
@@ -564,51 +563,43 @@ if uploaded_file is not None:
         )
         
         if st.button("Export Selected Plots"):
+            if not plot_export_options:
+                st.warning("No plots selected for export")
+                return
+            
             export_results = []
             
-            for plot_name in plot_export_options:
-                buf = BytesIO()
+            def export_plot(figure, plot_name, file_name):
                 try:
-                    # Determine which figure to save based on plot name
-                    if plot_name == "Well Log Visualization":
-                        fig_to_save = fig
-                        file_name = "well_log_visualization.png"
-                    elif plot_name == "2D Crossplots":
-                        fig_to_save = fig2
-                        file_name = "2d_crossplots.png"
-                    elif plot_name == "3D Crossplot" and show_3d_crossplot:
-                        fig_to_save = fig3d
-                        file_name = "3d_crossplot.png"
-                    elif plot_name == "Histograms" and show_histograms:
-                        fig_to_save = fig_hist
-                        file_name = "histograms.png"
-                    elif plot_name == "AVO Analysis":
-                        fig_to_save = fig3
-                        file_name = "avo_analysis.png"
-                    else:
-                        continue
-                    
-                    # Save figure to buffer
-                    fig_to_save.savefig(buf, format="png", dpi=300)
-                    
-                    # Create download button
+                    buf = BytesIO()
+                    figure.savefig(buf, format="png", dpi=300)
                     st.download_button(
                         label=f"Download {plot_name}",
                         data=buf.getvalue(),
                         file_name=file_name,
                         mime="image/png"
                     )
-                    export_results.append(f"✓ {plot_name} exported successfully")
+                    return f"✓ {plot_name} exported successfully"
                 except Exception as e:
-                    export_results.append(f"✗ Failed to export {plot_name}: {str(e)}")
-                    continue
+                    return f"✗ Failed to export {plot_name}: {str(e)}"
             
-            # Display export results
-            if export_results:
-                st.write("\n".join(export_results))
-                if all("✓" in result for result in export_results):
-                    st.success("All exports completed successfully!")
-                else:
-                    st.warning("Some exports completed with errors")
+            # Export each selected plot
+            for plot_name in plot_export_options:
+                if plot_name == "Well Log Visualization":
+                    export_results.append(export_plot(fig, plot_name, "well_log_visualization.png"))
+                elif plot_name == "2D Crossplots":
+                    export_results.append(export_plot(fig2, plot_name, "2d_crossplots.png"))
+                elif plot_name == "3D Crossplot" and show_3d_crossplot:
+                    export_results.append(export_plot(fig3d, plot_name, "3d_crossplot.png"))
+                elif plot_name == "Histograms" and show_histograms:
+                    export_results.append(export_plot(fig_hist, plot_name, "histograms.png"))
+                elif plot_name == "AVO Analysis":
+                    export_results.append(export_plot(fig3, plot_name, "avo_analysis.png"))
+            
+            # Display results
+            st.write("\n".join(export_results))
+            
+            if all("✓" in result for result in export_results):
+                st.success("All exports completed successfully!")
             else:
-                st.warning("No plots selected for export")
+                st.warning("Some exports had errors")   
