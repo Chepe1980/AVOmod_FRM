@@ -602,4 +602,4 @@ if uploaded_file is not None:
             if all("✓" in result for result in export_results):
                 st.success("All exports completed successfully!")
             else:
-                st.warning("Some exports had errors")   
+                st.warning("Some exports had errors")
