@@ -564,19 +564,21 @@ if uploaded_file is not None:
         
         if st.button("Export Selected Plots"):
             for plot_name in plot_export_options:
+                buf = BytesIO()
                 if plot_name == "Well Log Visualization":
-                    buf = BytesIO()
                     fig.savefig(buf, format="png", dpi=300)
                     st.download_button(
                         label=f"Download {plot_name}",
-                        data=buf,
+                        data=buf.getvalue(),
                         file_name="well_log_visualization.png",
                         mime="image/png"
                     )
-               # elif plot_name == "2D Crossplots" and 'fig2' in locals():
-                    buf = BytesIO()
+                elif plot_name == "2D Crossplots":
                     fig2.savefig(buf, format="png", dpi=300)
                     st.download_button(
                         label=f"Download {plot_name}",
-                        data=buf,
-                        file_name="2d_crossplot")
+                        data=buf.getvalue(),
+                        file_name="2d_crossplots.png",
+                        mime="image/png"
+                    )
+                elif plot_name == "3
