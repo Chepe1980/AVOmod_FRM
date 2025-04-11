@@ -10,7 +10,7 @@ from bokeh.plotting import figure
 from bokeh.models import ColumnDataSource, CustomJS, LassoSelectTool
 from bokeh.palettes import Category10
 from bokeh.transform import factor_cmap
-from streamlit_bokeh import streamlit_bokeh
+
 
 # Set page config
 st.set_page_config(layout="wide", page_title="Enhanced Rock Physics & AVO Modeling")
