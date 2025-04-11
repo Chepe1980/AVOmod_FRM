@@ -602,5 +602,4 @@ if uploaded_file is not None:
                     results.append(f"✓ Successfully exported {plot_name}")
                 else:
                     results.append(f"✗ Failed to export {plot_name}: {error}")
-            
 
