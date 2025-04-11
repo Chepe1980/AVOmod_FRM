@@ -551,9 +551,6 @@ if uploaded_file is not None:
         
         plt.tight_layout()
         st.pyplot(fig4)
-
-
-        
                 # Export functionality
         st.header("Export Results")
         st.markdown(get_table_download_link(logs), unsafe_allow_html=True)
@@ -570,24 +567,29 @@ if uploaded_file is not None:
             for plot_name in plot_export_options:
                 buf = BytesIO()
                 try:
+                    # Determine which figure to save based on plot name
                     if plot_name == "Well Log Visualization":
-                        fig.savefig(buf, format="png", dpi=300)
+                        fig_to_save = fig
                         file_name = "well_log_visualization.png"
                     elif plot_name == "2D Crossplots":
-                        fig2.savefig(buf, format="png", dpi=300)
+                        fig_to_save = fig2
                         file_name = "2d_crossplots.png"
                     elif plot_name == "3D Crossplot" and show_3d_crossplot:
-                        fig3d.savefig(buf, format="png", dpi=300)
+                        fig_to_save = fig3d
                         file_name = "3d_crossplot.png"
                     elif plot_name == "Histograms" and show_histograms:
-                        fig_hist.savefig(buf, format="png", dpi=300)
+                        fig_to_save = fig_hist
                         file_name = "histograms.png"
                     elif plot_name == "AVO Analysis":
-                        fig3.savefig(buf, format="png", dpi=300)
+                        fig_to_save = fig3
                         file_name = "avo_analysis.png"
                     else:
                         continue
-                        
+                    
+                    # Save figure to buffer
+                    fig_to_save.savefig(buf, format="png", dpi=300)
+                    
+                    # Create download button
                     st.download_button(
                         label=f"Download {plot_name}",
                         data=buf.getvalue(),
@@ -597,11 +599,18 @@ if uploaded_file is not None:
                     export_results.append(f"✓ {plot_name} exported successfully")
                 except Exception as e:
                     export_results.append(f"✗ Failed to export {plot_name}: {str(e)}")
+                    continue
             
-            # Show all export results
-            st.write("\n".join(export_results))
-            
-            if export_results and all("✓" in result for result in export_results):
-                st.success("All exports completed successfully!")
-            elif export_results:
-                st.warning("Some exports completed with errors")
+            # Display export results
+            if export_results:
+                st.write("\n".join(export_results))
+                if all("✓" in result for result in export_results):
+                    st.success("All exports completed successfully!")
+                else:
+                    st.warning("Some exports completed with errors")
+            else:
+                st.warning("No plots selected for export")
+
+
+        
+               
