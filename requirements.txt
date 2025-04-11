@@ -3,6 +3,7 @@ pyavo
 numpy
 pandas
 matplotlib
-base64
+
+
 
 
