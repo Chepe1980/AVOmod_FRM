@@ -573,7 +573,7 @@ if uploaded_file is not None:
                         file_name="well_log_visualization.png",
                         mime="image/png"
                     )
-                elif plot_name == "2D Crossplots" and 'fig2' in locals():
+               # elif plot_name == "2D Crossplots" and 'fig2' in locals():
                     buf = BytesIO()
                     fig2.savefig(buf, format="png", dpi=300)
                     st.download_button(
