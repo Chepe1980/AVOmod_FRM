@@ -4,8 +4,6 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.colors as colors
 from mpl_toolkits.mplot3d import Axes3D
-from matplotlib.patches import Ellipse
-from matplotlib.lines import Line2D
 from io import BytesIO
 import base64
 from streamlit_bokeh_events import streamlit_bokeh_events
@@ -15,6 +13,13 @@ from bokeh.palettes import Category10
 from bokeh.transform import factor_cmap
 import scipy.stats as stats
 from scipy.optimize import curve_fit
+
+# Import rockphypy with error handling
+try:
+    from rockphypy import QI, GM, Fluid
+    rockphypy_available = True
+except ImportError:
+    rockphypy_available = False
 
 # Set page config
 st.set_page_config(layout="wide", page_title="Enhanced Rock Physics & AVO Modeling")
@@ -34,15 +39,21 @@ with st.sidebar:
     st.header("Model Configuration")
     
     # Rock physics model selection
-    model_choice = st.selectbox(
-        "Rock Physics Model",
-        ["Gassmann's Fluid Substitution", 
-         "Critical Porosity Model (Nur)", 
-         "Contact Theory (Hertz-Mindlin)",
-         "Dvorkin-Nur Soft Sand Model",
-         "Raymer-Hunt-Gardner Model"],
-        index=0
-    )
+    model_options = [
+        "Gassmann's Fluid Substitution", 
+        "Critical Porosity Model (Nur)", 
+        "Contact Theory (Hertz-Mindlin)",
+        "Dvorkin-Nur Soft Sand Model",
+        "Raymer-Hunt-Gardner Model"
+    ]
+    
+    if rockphypy_available:
+        model_options.extend([
+            "Soft Sand RPT (rockphypy)",
+            "Stiff Sand RPT (rockphypy)"
+        ])
+    
+    model_choice = st.selectbox("Rock Physics Model", model_options, index=0)
     
     # Mineral properties
     st.subheader("Mineral Properties")
@@ -64,6 +75,13 @@ with st.sidebar:
         effective_pressure = st.slider("Effective Pressure (MPa)", 1, 50, 10)
         if model_choice == "Dvorkin-Nur Soft Sand Model":
             critical_porosity = st.slider("Critical Porosity (φc)", 0.3, 0.5, 0.4, 0.01)
+    
+    # Rockphypy specific parameters
+    if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+        st.subheader("RPT Model Parameters")
+        rpt_phi_c = st.slider("RPT Critical Porosity", 0.3, 0.5, 0.4, 0.01)
+        rpt_Cn = st.slider("RPT Coordination Number", 6.0, 12.0, 8.6, 0.1)
+        rpt_sigma = st.slider("RPT Effective Stress (MPa)", 1, 50, 20)
     
     # Fluid properties with uncertainty ranges
     st.subheader("Fluid Properties")
@@ -106,7 +124,6 @@ with st.sidebar:
     show_3d_crossplot = st.checkbox("Show 3D Crossplot", value=False)
     show_histograms = st.checkbox("Show Histograms", value=True)
     show_smith_gidlow = st.checkbox("Show Smith-Gidlow AVO Attributes", value=True)
-    show_templates = st.checkbox("Show Rock Physics Templates (Ødegaard & Avseth)", value=False)
     
     # File upload
     st.subheader("Well Log Data")
@@ -122,7 +139,7 @@ def handle_errors(func):
             st.stop()
     return wrapper
 
-# Rock Physics Models (keep all existing model functions exactly as they were)
+# Rock Physics Models
 def frm(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi):
     """Gassmann's Fluid Substitution"""
     vp1 = vp1/1000.  # Convert m/s to km/s
@@ -496,67 +513,45 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
         # Run Monte Carlo simulation
         mc_results = monte_carlo_simulation(logs, model_func, params, mc_iterations)
 
-    # Create color map for visualization
-    ccc = ['#B3B3B3','blue','green','red','#996633']
-    cmap_facies = colors.ListedColormap(ccc[0:len(ccc)], 'indexed')
-
-    # =============================================
-    # UPDATED 2D CROSSPLOTS SECTION WITH TEMPLATES
-    # =============================================
-    st.header("2D Crossplots")
-    fig2, ax2 = plt.subplots(nrows=1, ncols=4, figsize=(16, 4))
-    
-    def plot_odegaard_avseth_templates(ax):
-        """Add Ødegaard & Avseth rock physics templates to crossplot"""
-        # Shale trend
-        shale_x = np.linspace(6000, 12000, 100)
-        shale_y = 2.2 - 0.2*(shale_x - 6000)/6000
-        ax.plot(shale_x, shale_y, 'k--', alpha=0.5, linewidth=1)
-        
-        # Sand trends
-        for vpvs, color in [(1.6, 'blue'), (1.8, 'green'), (2.0, 'red')]:
-            sand_x = np.linspace(4000, 12000, 100)
-            sand_y = vpvs + 0.2*(sand_x - 4000)/8000
-            ax.plot(sand_x, sand_y, linestyle='--', color=color, alpha=0.5, linewidth=1)
-        
-        # Add ellipses for different facies
-        ellipses = [
-            {'center': (8000, 1.8), 'width': 3000, 'height': 0.3, 'angle': 0, 'label': 'Brine Sand', 'color': 'blue'},
-            {'center': (9000, 1.7), 'width': 2000, 'height': 0.2, 'angle': 0, 'label': 'Oil Sand', 'color': 'green'},
-            {'center': (7000, 1.6), 'width': 2500, 'height': 0.25, 'angle': 0, 'label': 'Gas Sand', 'color': 'red'},
-            {'center': (11000, 2.1), 'width': 4000, 'height': 0.2, 'angle': 0, 'label': 'Shale', 'color': 'gray'}
-        ]
-        
-        for el in ellipses:
-            ellipse = Ellipse(xy=el['center'], width=el['width'], height=el['height'],
-                             angle=el['angle'], alpha=0.2, color=el['color'])
-            ax.add_patch(ellipse)
-            ax.text(el['center'][0], el['center'][1], el['label'], 
-                   ha='center', va='center', fontsize=8)
-    
-    # Plot crossplots with optional templates
-    for i, case in enumerate(['', 'B', 'O', 'G']):
-        col = logs[f'LFC_{case}'] if case else logs.LFC_B
-        ax2[i].scatter(logs[f'IP_FRM{case}'] if case else logs.IP, 
-                      logs[f'VPVS_FRM{case}'] if case else logs.VPVS, 
-                      20, col, marker='o', edgecolors='none', alpha=0.5, 
-                      cmap=cmap_facies, vmin=0, vmax=4)
-        
-        if show_templates:
-            plot_odegaard_avseth_templates(ax2[i])
-        
-        ax2[i].set_xlim(3000,16000)
-        ax2[i].set_ylim(1.5,3)
-        ax2[i].set_title('Original Data' if not case else f'FRM to {"Brine" if case=="B" else "Oil" if case=="O" else "Gas"}')
-    
-    plt.tight_layout()
-    st.pyplot(fig2)
-
-    # [Rest of your original visualization code remains unchanged...]
-    
     return logs, mc_results
 
-# [Rest of your original code (AVO modeling, visualization, etc.) remains unchanged...]
+# Download link generator
+def get_table_download_link(df, filename="results.csv"):
+    csv = df.to_csv(index=False)
+    b64 = base64.b64encode(csv.encode()).decode()
+    href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download CSV File</a>'
+    return href
+
+# AVO modeling functions
+def calculate_reflection_coefficients(vp1, vp2, vs1, vs2, rho1, rho2, angle):
+    """Calculate PP reflection coefficients using Aki-Richards approximation"""
+    theta = np.radians(angle)
+    vp_avg = (vp1 + vp2)/2
+    vs_avg = (vs1 + vs2)/2
+    rho_avg = (rho1 + rho2)/2
+    
+    dvp = vp2 - vp1
+    dvs = vs2 - vs1
+    drho = rho2 - rho1
+    
+    a = 0.5 * (1 + np.tan(theta)**2)
+    b = -4 * (vs_avg**2/vp_avg**2) * np.sin(theta)**2
+    c = 0.5 * (1 - 4 * (vs_avg**2/vp_avg**2) * np.sin(theta)**2)
+    
+    rc = a*(dvp/vp_avg) + b*(dvs/vs_avg) + c*(drho/rho_avg)
+    return rc
+
+def fit_avo_curve(angles, rc_values):
+    """Fit a line to AVO response to get intercept and gradient"""
+    def linear_func(x, intercept, gradient):
+        return intercept + gradient * np.sin(np.radians(x))**2
+    
+    try:
+        popt, pcov = curve_fit(linear_func, angles, rc_values)
+        intercept, gradient = popt
+        return intercept, gradient, np.sqrt(np.diag(pcov))
+    except:
+        return np.nan, np.nan, (np.nan, np.nan)
 
 # Main content area
 if uploaded_file is not None:
@@ -572,7 +567,526 @@ if uploaded_file is not None:
             effective_pressure=effective_pressure if 'effective_pressure' in locals() else None
         )
         
-        # [Rest of your original visualization code...]
+        # Depth range selection
+        st.header("Well Log Visualization")
+        ztop, zbot = st.slider(
+            "Select Depth Range", 
+            float(logs.DEPTH.min()), 
+            float(logs.DEPTH.max()), 
+            (float(logs.DEPTH.min()), float(logs.DEPTH.max()))
+        )
         
+        # Visualization
+        ccc = ['#B3B3B3','blue','green','red','#996633']
+        cmap_facies = colors.ListedColormap(ccc[0:len(ccc)], 'indexed')
+
+        # Create a filtered dataframe for the selected depth range
+        ll = logs.loc[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]
+        cluster = np.repeat(np.expand_dims(ll['LFC_B'].values,1), 100, 1)
+
+        # Create the well log figure
+        fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12, 8))
+        ax[0].plot(ll.VSH, ll.DEPTH, '-g', label='Vsh')
+        ax[0].plot(ll.SW, ll.DEPTH, '-b', label='Sw')
+        ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
+        ax[1].plot(ll.IP_FRMG, ll.DEPTH, '-r', label='Gas')
+        ax[1].plot(ll.IP_FRMB, ll.DEPTH, '-b', label='Brine')
+        ax[1].plot(ll.IP, ll.DEPTH, '-', color='0.5', label='Original')
+        ax[2].plot(ll.VPVS_FRMG, ll.DEPTH, '-r', label='Gas')
+        ax[2].plot(ll.VPVS_FRMB, ll.DEPTH, '-b', label='Brine')
+        ax[2].plot(ll.VPVS, ll.DEPTH, '-', color='0.5', label='Original')
+        im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=4)
+
+        cbar = plt.colorbar(im, ax=ax[3])
+        cbar.set_label((12*' ').join(['undef', 'brine', 'oil', 'gas', 'shale']))
+        cbar.set_ticks(range(0,5))
+        cbar.set_ticklabels(['']*5)
+
+        for i in ax[:-1]:
+            i.set_ylim(ztop,zbot)
+            i.invert_yaxis()
+            i.grid()
+            i.locator_params(axis='x', nbins=4)
+        ax[0].legend(fontsize='small', loc='lower right')
+        ax[1].legend(fontsize='small', loc='lower right')
+        ax[2].legend(fontsize='small', loc='lower right')
+        ax[0].set_xlabel("Vcl/phi/Sw"); ax[0].set_xlim(-.1,1.1)
+        ax[1].set_xlabel("Ip [m/s*g/cc]"); ax[1].set_xlim(6000,15000)
+        ax[2].set_xlabel("Vp/Vs"); ax[2].set_xlim(1.5,2)
+        ax[3].set_xlabel('LFC')
+        ax[1].set_yticklabels([]); ax[2].set_yticklabels([]); ax[3].set_yticklabels([]); ax[3].set_xticklabels([])
+        
+        # Display the well log plot
+        st.pyplot(fig)
+
+        # Interactive Crossplot
+        st.header("Interactive Crossplots with Selection")
+        crossplot = create_interactive_crossplot(logs)
+        if crossplot:
+            event_result = streamlit_bokeh_events(
+                bokeh_plot=crossplot,
+                events="SELECTION_CHANGED",
+                key="crossplot",
+                refresh_on_update=False,
+                debounce_time=0,
+                override_height=500
+            )
+        else:
+            st.warning("Could not generate interactive crossplot due to data issues")
+        
+        # Original 2D crossplots
+        st.header("2D Crossplots")
+        fig2, ax2 = plt.subplots(nrows=1, ncols=4, figsize=(16, 4))
+        ax2[0].scatter(logs.IP, logs.VPVS, 20, logs.LFC_B, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
+        ax2[1].scatter(logs.IP_FRMB, logs.VPVS_FRMB, 20, logs.LFC_B, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
+        ax2[2].scatter(logs.IP_FRMO, logs.VPVS_FRMO, 20, logs.LFC_O, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
+        ax2[3].scatter(logs.IP_FRMG, logs.VPVS_FRMG, 20, logs.LFC_G, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
+        ax2[0].set_xlim(3000,16000); ax2[0].set_ylim(1.5,3)
+        ax2[0].set_title('Original Data')
+        ax2[1].set_title('FRM to Brine')
+        ax2[2].set_title('FRM to Oil')
+        ax2[3].set_title('FRM to Gas')
+        st.pyplot(fig2)
+
+        # 3D Crossplot if enabled
+        if show_3d_crossplot:
+            st.header("3D Crossplot")
+            fig3d = plt.figure(figsize=(10, 8))
+            ax3d = fig3d.add_subplot(111, projection='3d')
+            
+            for case, color in [('B', 'blue'), ('O', 'green'), ('G', 'red')]:
+                mask = logs[f'LFC_{case}'] == int(case == 'B')*1 + int(case == 'O')*2 + int(case == 'G')*3
+                ax3d.scatter(
+                    logs.loc[mask, f'IP_FRM{case}'],
+                    logs.loc[mask, f'VPVS_FRM{case}'],
+                    logs.loc[mask, f'RHO_FRM{case}'],
+                    c=color, label=case, alpha=0.5
+                )
+            
+            ax3d.set_xlabel('IP (m/s*g/cc)')
+            ax3d.set_ylabel('Vp/Vs')
+            ax3d.set_zlabel('Density (g/cc)')
+            ax3d.set_title('3D Rock Physics Crossplot')
+            ax3d.legend()
+            st.pyplot(fig3d)
+
+        # Histograms if enabled
+        if show_histograms:
+            st.header("Property Distributions")
+            fig_hist, ax_hist = plt.subplots(2, 2, figsize=(12, 8))
+            
+            ax_hist[0,0].hist(logs.IP_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
+            ax_hist[0,0].hist(logs.IP_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
+            ax_hist[0,0].hist(logs.IP_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[0,0].set_xlabel('IP (m/s*g/cc)')
+            ax_hist[0,0].set_ylabel('Frequency')
+            ax_hist[0,0].legend()
+            
+            ax_hist[0,1].hist(logs.VPVS_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
+            ax_hist[0,1].hist(logs.VPVS_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
+            ax_hist[0,1].hist(logs.VPVS_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[0,1].set_xlabel('Vp/Vs')
+            ax_hist[0,1].legend()
+            
+            ax_hist[1,0].hist(logs.RHO_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
+            ax_hist[1,0].hist(logs.RHO_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
+            ax_hist[1,0].hist(logs.RHO_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[1,0].set_xlabel('Density (g/cc)')
+            ax_hist[1,0].set_ylabel('Frequency')
+            ax_hist[1,0].legend()
+            
+            ax_hist[1,1].hist(logs.LFC_B, bins=[0,1,2,3,4,5], alpha=0.5, rwidth=0.8, align='left')
+            ax_hist[1,1].set_xlabel('Litho-Fluid Class')
+            ax_hist[1,1].set_xticks([0.5,1.5,2.5,3.5,4.5])
+            ax_hist[1,1].set_xticklabels(['Undef','Brine','Oil','Gas','Shale'])
+            
+            plt.tight_layout()
+            st.pyplot(fig_hist)
+
+        # AVO Modeling
+        st.header("AVO Modeling")
+        middle_top = ztop + (zbot - ztop) * 0.4
+        middle_bot = ztop + (zbot - ztop) * 0.6
+        
+        cases = ['Brine', 'Oil', 'Gas']
+        case_data = {
+            'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
+            'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'g'},
+            'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'}
+        }
+        
+        wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
+        t_samp = np.arange(0, 0.5, 0.0001)
+        t_middle = 0.2
+        
+        fig3, (ax_wavelet, ax_avo) = plt.subplots(1, 2, figsize=(12, 5), gridspec_kw={'width_ratios': [1, 2]})
+        
+        ax_wavelet.plot(wlt_time, wlt_amp, color='purple', linewidth=2)
+        ax_wavelet.fill_between(wlt_time, wlt_amp, color='purple', alpha=0.3)
+        ax_wavelet.set_title(f"Wavelet ({wavelet_freq} Hz)")
+        ax_wavelet.set_xlabel("Time (s)")
+        ax_wavelet.set_ylabel("Amplitude")
+        ax_wavelet.grid(True)
+        
+        rc_min, rc_max = st.slider(
+            "Reflection Coefficient Range",
+            -0.5, 0.5, (-0.2, 0.2),
+            step=0.01,
+            key='rc_range'
+        )
+        
+        angles = np.arange(min_angle, max_angle + 1, angle_step)
+        
+        # Store AVO attributes for Smith-Gidlow analysis
+        avo_attributes = {'Case': [], 'Intercept': [], 'Gradient': [], 'Fluid_Factor': []}
+        
+        for case in cases:
+            vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+            vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+            rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+            
+            vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+            vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+            rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+            
+            # Calculate reflection coefficients
+            rc = []
+            for angle in angles:
+                rc.append(calculate_reflection_coefficients(
+                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                ))
+            
+            # Fit AVO curve to get intercept and gradient
+            intercept, gradient, _ = fit_avo_curve(angles, rc)
+            fluid_factor = intercept + 1.16 * (vp_upper/vs_upper) * (intercept - gradient)
+            
+            # Store attributes for Smith-Gidlow analysis
+            avo_attributes['Case'].append(case)
+            avo_attributes['Intercept'].append(intercept)
+            avo_attributes['Gradient'].append(gradient)
+            avo_attributes['Fluid_Factor'].append(fluid_factor)
+            
+            # Plot AVO curve
+            ax_avo.plot(angles, rc, f"{case_data[case]['color']}-", label=f"{case}")
+        
+        ax_avo.set_title("AVO Reflection Coefficients (Middle Interface)")
+        ax_avo.set_xlabel("Angle (degrees)")
+        ax_avo.set_ylabel("Reflection Coefficient")
+        ax_avo.set_ylim(rc_min, rc_max)
+        ax_avo.grid(True)
+        ax_avo.legend()
+        
+        st.pyplot(fig3)
+
+        # Smith-Gidlow AVO Analysis
+        if show_smith_gidlow:
+            st.header("Smith-Gidlow AVO Attributes")
+            
+            # Create DataFrame for AVO attributes
+            avo_df = pd.DataFrame(avo_attributes)
+            
+            # Display attributes table
+            if not avo_df.empty:
+                numeric_cols = avo_df.select_dtypes(include=[np.number]).columns
+                st.dataframe(avo_df.style.format("{:.4f}", subset=numeric_cols))
+            else:
+                st.warning("No AVO attributes calculated")
+            
+            # Plot intercept vs gradient
+            fig_sg, ax_sg = plt.subplots(figsize=(8, 6))
+            colors = {'Brine': 'blue', 'Oil': 'green', 'Gas': 'red'}
+            
+            for idx, row in avo_df.iterrows():
+                ax_sg.scatter(row['Intercept'], row['Gradient'], 
+                             color=colors[row['Case']], s=100, label=row['Case'])
+                ax_sg.text(row['Intercept'], row['Gradient'], row['Case'], 
+                          fontsize=9, ha='right', va='bottom')
+            
+            # Add background classification
+            x = np.linspace(-0.5, 0.5, 100)
+            ax_sg.plot(x, -x, 'k--', alpha=0.3)  # Typical brine line
+            ax_sg.plot(x, -4*x, 'k--', alpha=0.3)  # Typical gas line
+            
+            ax_sg.set_xlabel('Intercept (A)')
+            ax_sg.set_ylabel('Gradient (B)')
+            ax_sg.set_title('Smith-Gidlow AVO Crossplot')
+            ax_sg.grid(True)
+            ax_sg.axhline(0, color='k', alpha=0.3)
+            ax_sg.axvline(0, color='k', alpha=0.3)
+            ax_sg.set_xlim(-0.3, 0.3)
+            ax_sg.set_ylim(-0.3, 0.3)
+            
+            st.pyplot(fig_sg)
+            
+            # Fluid Factor analysis
+            st.subheader("Fluid Factor Analysis")
+            fig_ff, ax_ff = plt.subplots(figsize=(8, 4))
+            ax_ff.bar(avo_df['Case'], avo_df['Fluid_Factor'], 
+                     color=[colors[c] for c in avo_df['Case']])
+            ax_ff.set_ylabel('Fluid Factor')
+            ax_ff.set_title('Fluid Factor by Fluid Type')
+            ax_ff.grid(True)
+            st.pyplot(fig_ff)
+
+        # Synthetic gathers
+        st.header("Synthetic Seismic Gathers (Middle Interface)")
+        time_min, time_max = st.slider(
+            "Time Range for Synthetic Gathers (s)",
+            0.0, 0.5, (0.15, 0.25),
+            step=0.01,
+            key='time_range'
+        )
+        
+        fig4, ax4 = plt.subplots(1, 3, figsize=(18, 5))
+        
+        for idx, case in enumerate(cases):
+            vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+            vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+            rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+            
+            vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+            vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+            rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+            
+            syn_gather = []
+            for angle in angles:
+                rc = calculate_reflection_coefficients(
+                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                )
+                
+                rc_series = np.zeros(len(t_samp))
+                idx_middle = np.argmin(np.abs(t_samp - t_middle))
+                rc_series[idx_middle] = rc
+                
+                syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+                syn_gather.append(syn_trace)
+            
+            syn_gather = np.array(syn_gather)
+            
+            extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+            im = ax4[idx].imshow(syn_gather.T, aspect='auto', extent=extent,
+                               cmap=selected_cmap, vmin=-np.max(np.abs(syn_gather)), 
+                               vmax=np.max(np.abs(syn_gather)))
+            
+            props_text = f"Vp: {vp_middle:.0f} m/s\nVs: {vs_middle:.0f} m/s\nRho: {rho_middle:.2f} g/cc"
+            ax4[idx].text(0.05, 0.95, props_text, transform=ax4[idx].transAxes,
+                         fontsize=9, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
+            
+            ax4[idx].set_title(f"{case} Case", fontweight='bold')
+            ax4[idx].set_xlabel("Angle (degrees)")
+            ax4[idx].set_ylabel("Time (s)")
+            ax4[idx].set_ylim(time_max, time_min)
+            
+            plt.colorbar(im, ax=ax4[idx], label='Amplitude')
+        
+        plt.tight_layout()
+        st.pyplot(fig4)
+
+        # Rock Physics Templates (RPT) - New Section
+        if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+            st.header("Rock Physics Templates (RPT)")
+            
+            # Model parameters
+            D0, K0, G0 = 2.65, 36.6, 45  # Mineral properties
+            Db, Kb = rho_b, k_b            # Brine from user inputs
+            Do, Ko = rho_o, k_o            # Oil from user inputs
+            Dg, Kg = rho_g, k_g            # Gas from user inputs
+            
+            phi = np.linspace(0.1, rpt_phi_c, 10)  # Porosity range
+            sw = np.linspace(0, 1, 5)              # Water saturation
+            
+            fig_rpt, ax_rpt = plt.subplots(1, 2, figsize=(15, 6))
+            
+            if model_choice == "Soft Sand RPT (rockphypy)":
+                Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                title_prefix = "Soft Sand"
+            else:
+                Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                title_prefix = "Stiff Sand"
+            
+            # Gas case
+            QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw, ax=ax_rpt[0])
+            ax_rpt[0].set_title(f"{title_prefix} RPT - Gas Case")
+            ax_rpt[0].set_xlim(1000, 14000)
+            ax_rpt[0].set_ylim(1.4, 2.4)
+            
+            # Oil case
+            QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw, ax=ax_rpt[1])
+            ax_rpt[1].set_title(f"{title_prefix} RPT - Oil Case")
+            ax_rpt[1].set_xlim(1000, 14000)
+            ax_rpt[1].set_ylim(1.4, 2.4)
+            
+            st.pyplot(fig_rpt)
+
+        # Uncertainty Analysis Results
+        if include_uncertainty and mc_results:
+            st.header("Uncertainty Analysis Results")
+            
+            # Create summary statistics
+            mc_df = pd.DataFrame(mc_results)
+            summary_stats = mc_df.describe().T
+            
+            st.subheader("Monte Carlo Simulation Statistics")
+            if not summary_stats.empty:
+                numeric_cols = summary_stats.select_dtypes(include=[np.number]).columns
+                st.dataframe(summary_stats.style.format("{:.2f}", subset=numeric_cols))
+            else:
+                st.warning("No statistics available - check your Monte Carlo simulation parameters")
+            
+            # Plot uncertainty distributions
+            st.subheader("Property Uncertainty Distributions")
+            fig_unc, ax_unc = plt.subplots(2, 2, figsize=(12, 8))
+            
+            # VP distribution
+            ax_unc[0,0].hist(mc_results['VP'], bins=30, color='blue', alpha=0.7)
+            ax_unc[0,0].set_xlabel('VP (m/s)')
+            ax_unc[0,0].set_ylabel('Frequency')
+            ax_unc[0,0].set_title('P-wave Velocity Distribution')
+            
+            # VS distribution
+            ax_unc[0,1].hist(mc_results['VS'], bins=30, color='green', alpha=0.7)
+            ax_unc[0,1].set_xlabel('VS (m/s)')
+            ax_unc[0,1].set_title('S-wave Velocity Distribution')
+            
+            # IP distribution
+            ax_unc[1,0].hist(mc_results['IP'], bins=30, color='red', alpha=0.7)
+            ax_unc[1,0].set_xlabel('IP (m/s*g/cc)')
+            ax_unc[1,0].set_ylabel('Frequency')
+            ax_unc[1,0].set_title('Acoustic Impedance Distribution')
+            
+            # Vp/Vs distribution
+            ax_unc[1,1].hist(mc_results['VPVS'], bins=30, color='purple', alpha=0.7)
+            ax_unc[1,1].set_xlabel('Vp/Vs')
+            ax_unc[1,1].set_title('Vp/Vs Ratio Distribution')
+            
+            plt.tight_layout()
+            st.pyplot(fig_unc)
+            
+            # AVO attribute uncertainty
+            st.subheader("AVO Attribute Uncertainty")
+            fig_avo_unc, ax_avo_unc = plt.subplots(1, 3, figsize=(15, 4))
+            
+            # Intercept distribution
+            ax_avo_unc[0].hist(mc_results['Intercept'], bins=30, color='blue', alpha=0.7)
+            ax_avo_unc[0].set_xlabel('Intercept')
+            ax_avo_unc[0].set_ylabel('Frequency')
+            ax_avo_unc[0].set_title('Intercept Distribution')
+            
+            # Gradient distribution
+            ax_avo_unc[1].hist(mc_results['Gradient'], bins=30, color='green', alpha=0.7)
+            ax_avo_unc[1].set_xlabel('Gradient')
+            ax_avo_unc[1].set_title('Gradient Distribution')
+            
+            # Fluid Factor distribution
+            ax_avo_unc[2].hist(mc_results['Fluid_Factor'], bins=30, color='red', alpha=0.7)
+            ax_avo_unc[2].set_xlabel('Fluid Factor')
+            ax_avo_unc[2].set_title('Fluid Factor Distribution')
+            
+            plt.tight_layout()
+            st.pyplot(fig_avo_unc)
+            
+            # Crossplot of AVO attributes with uncertainty
+            st.subheader("AVO Attribute Crossplot with Uncertainty")
+            fig_avo_cross, ax_avo_cross = plt.subplots(figsize=(8, 6))
+            
+            # Plot all Monte Carlo samples
+            ax_avo_cross.scatter(mc_results['Intercept'], mc_results['Gradient'], 
+                                c=mc_results['Fluid_Factor'], cmap='coolwarm', 
+                                alpha=0.3, s=10)
+            
+            # Add colorbar
+            sc = ax_avo_cross.scatter([], [], c=[], cmap='coolwarm')
+            plt.colorbar(sc, label='Fluid Factor', ax=ax_avo_cross)
+            
+            # Add background classification
+            x = np.linspace(-0.5, 0.5, 100)
+            ax_avo_cross.plot(x, -x, 'k--', alpha=0.3)  # Typical brine line
+            ax_avo_cross.plot(x, -4*x, 'k--', alpha=0.3)  # Typical gas line
+            
+            ax_avo_cross.set_xlabel('Intercept (A)')
+            ax_avo_cross.set_ylabel('Gradient (B)')
+            ax_avo_cross.set_title('AVO Attribute Uncertainty')
+            ax_avo_cross.grid(True)
+            ax_avo_cross.axhline(0, color='k', alpha=0.3)
+            ax_avo_cross.axvline(0, color='k', alpha=0.3)
+            ax_avo_cross.set_xlim(-0.3, 0.3)
+            ax_avo_cross.set_ylim(-0.3, 0.3)
+            
+            st.pyplot(fig_avo_cross)
+
+        # Export functionality
+        st.header("Export Results")
+        st.markdown(get_table_download_link(logs), unsafe_allow_html=True)
+        
+        plot_export_options = st.multiselect(
+            "Select plots to export as PNG",
+            ["Well Log Visualization", "2D Crossplots", "3D Crossplot", "Histograms", 
+             "AVO Analysis", "Smith-Gidlow Analysis", "Uncertainty Analysis", "RPT Crossplots"],
+            default=["Well Log Visualization", "AVO Analysis"]
+        )
+        
+        if st.button("Export Selected Plots"):
+            if not plot_export_options:
+                st.warning("No plots selected for export")
+            else:
+                def export_plot(figure, plot_name, file_name):
+                    buf = BytesIO()
+                    try:
+                        figure.savefig(buf, format="png", dpi=300)
+                        st.download_button(
+                            label=f"Download {plot_name}",
+                            data=buf.getvalue(),
+                            file_name=file_name,
+                            mime="image/png"
+                        )
+                        return True, ""
+                    except Exception as e:
+                        return False, str(e)
+                
+                results = []
+                for plot_name in plot_export_options:
+                    if plot_name == "Well Log Visualization":
+                        success, error = export_plot(fig, plot_name, "well_log_visualization.png")
+                    elif plot_name == "2D Crossplots":
+                        success, error = export_plot(fig2, plot_name, "2d_crossplots.png")
+                    elif plot_name == "3D Crossplot" and show_3d_crossplot:
+                        success, error = export_plot(fig3d, plot_name, "3d_crossplot.png")
+                    elif plot_name == "Histograms" and show_histograms:
+                        success, error = export_plot(fig_hist, plot_name, "histograms.png")
+                    elif plot_name == "AVO Analysis":
+                        success, error = export_plot(fig3, plot_name, "avo_analysis.png")
+                    elif plot_name == "Smith-Gidlow Analysis" and show_smith_gidlow:
+                        success, error = export_plot(fig_sg, plot_name, "smith_gidlow_analysis.png")
+                    elif plot_name == "Uncertainty Analysis" and include_uncertainty:
+                        # Need to handle multiple figures for uncertainty
+                        success1, error1 = export_plot(fig_unc, "Uncertainty_Distributions", "uncertainty_distributions.png")
+                        success2, error2 = export_plot(fig_avo_unc, "AVO_Uncertainty", "avo_uncertainty.png")
+                        success3, error3 = export_plot(fig_avo_cross, "AVO_Crossplot_Uncertainty", "avo_crossplot_uncertainty.png")
+                        
+                        if all([success1, success2, success3]):
+                            results.append(f"✓ Successfully exported {plot_name} plots")
+                        else:
+                            errors = [e for e in [error1, error2, error3] if e]
+                            results.append(f"✗ Partially exported {plot_name}: {', '.join(errors)}")
+                        continue
+                    elif plot_name == "RPT Crossplots" and model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+                        success, error = export_plot(fig_rpt, plot_name, "rpt_crossplots.png")
+                    else:
+                        continue
+                    
+                    if success:
+                        results.append(f"✓ Successfully exported {plot_name}")
+                    else:
+                        results.append(f"✗ Failed to export {plot_name}: {error}")
+                
+                st.write("\n".join(results))
+                
+                if all("✓" in result for result in results):
+                    st.success("All exports completed successfully!")
+                elif any("✓" in result for result in results):
+                    st.warning("Some exports completed with errors")
+                else:
+                    st.error("All exports failed")
+    
     except Exception as e:
         st.error(f"An error occurred during processing: {str(e)}")
