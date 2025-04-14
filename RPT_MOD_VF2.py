@@ -623,7 +623,7 @@ if uploaded_file is not None:
             "Select Depth Range", 
             float(logs.DEPTH.min()), 
             float(logs.DEPTH.max()), 
-            (float(logs.DEPTH.min()), float(logs.DEPTH.max()))
+            (float(logs.DEPTH.min()), float(logs.DEPTH.max())))
         
         # Visualization
         ccc = ['#B3B3B3','blue','green','red','#996633']
