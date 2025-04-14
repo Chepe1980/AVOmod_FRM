@@ -703,12 +703,12 @@ if uploaded_file is not None:
             ax_hist[0,1].set_xlabel('Vp/Vs')
             ax_hist[0,1].legend()
             
-            ax_hist[1,0].hist(logs.RHO_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
-            ax_hist[1,0].hist(logs.RHO_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
-            ax_hist[1,0].hist(logs.RHO_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[1,0].hist(logs.RHO_FRMB, bins=30, color='blue', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMO, bins=30, color='green', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMG, bins=30, color='red', alpha=0.7)
             ax_hist[1,0].set_xlabel('Density (g/cc)')
             ax_hist[1,0].set_ylabel('Frequency')
-            ax_hist[1,0].legend()
+            ax_hist[1,0].legend(['Brine', 'Oil', 'Gas'])
             
             ax_hist[1,1].hist(logs.LFC_B, bins=[0,1,2,3,4,5], alpha=0.5, rwidth=0.8, align='left')
             ax_hist[1,1].set_xlabel('Litho-Fluid Class')
@@ -898,7 +898,7 @@ if uploaded_file is not None:
             plt.tight_layout()
             st.pyplot(fig4)
 
-        # Rock Physics Templates (RPT) - New Section
+        # Rock Physics Templates (RPT) - Fixed Section
         if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"] and rockphypy_available:
             st.header("Rock Physics Templates (RPT)")
             
@@ -911,28 +911,28 @@ if uploaded_file is not None:
             phi = np.linspace(0.1, rpt_phi_c, 10)  # Porosity range
             sw = np.linspace(0, 1, 5)              # Water saturation
             
-            fig_rpt, ax_rpt = plt.subplots(1, 2, figsize=(15, 6))
-            
+            # Create separate figures for each case (since QI.plot_rpt doesn't accept ax parameter)
+            st.subheader("Gas Case RPT")
+            fig_rpt_gas = plt.figure(figsize=(8, 6))
             if model_choice == "Soft Sand RPT (rockphypy)":
                 Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                title_prefix = "Soft Sand"
+                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
             else:
                 Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                title_prefix = "Stiff Sand"
+                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
+            plt.title(f"{model_choice.split(' ')[0]} RPT - Gas Case")
+            st.pyplot(fig_rpt_gas)
             
-            # Gas case
-            QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw, ax=ax_rpt[0])
-            ax_rpt[0].set_title(f"{title_prefix} RPT - Gas Case")
-            ax_rpt[0].set_xlim(1000, 14000)
-            ax_rpt[0].set_ylim(1.4, 2.4)
-            
-            # Oil case
-            QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw, ax=ax_rpt[1])
-            ax_rpt[1].set_title(f"{title_prefix} RPT - Oil Case")
-            ax_rpt[1].set_xlim(1000, 14000)
-            ax_rpt[1].set_ylim(1.4, 2.4)
-            
-            st.pyplot(fig_rpt)
+            st.subheader("Oil Case RPT")
+            fig_rpt_oil = plt.figure(figsize=(8, 6))
+            if model_choice == "Soft Sand RPT (rockphypy)":
+                Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
+            else:
+                Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
+            plt.title(f"{model_choice.split(' ')[0]} RPT - Oil Case")
+            st.pyplot(fig_rpt_oil)
 
         # Uncertainty Analysis Results
         if include_uncertainty and mc_results and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
@@ -1086,7 +1086,16 @@ if uploaded_file is not None:
                             results.append(f"✗ Partially exported {plot_name}: {', '.join(errors)}")
                         continue
                     elif plot_name == "RPT Crossplots" and model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
-                        success, error = export_plot(fig_rpt, plot_name, "rpt_crossplots.png")
+                        # Handle both RPT figures
+                        success1, error1 = export_plot(fig_rpt_gas, "RPT_Gas", "rpt_gas.png")
+                        success2, error2 = export_plot(fig_rpt_oil, "RPT_Oil", "rpt_oil.png")
+                        
+                        if all([success1, success2]):
+                            results.append(f"✓ Successfully exported {plot_name} plots")
+                        else:
+                            errors = [e for e in [error1, error2] if e]
+                            results.append(f"✗ Partially exported {plot_name}: {', '.join(errors)}")
+                        continue
                     else:
                         continue
                     
