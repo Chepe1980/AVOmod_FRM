@@ -391,7 +391,13 @@ def create_interactive_crossplot(logs):
 @handle_errors
 def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iterations=100, **kwargs):
     # Read and validate data
-    logs = pd.read_csv(uploaded_file)
+    if isinstance(uploaded_file, str):
+        logs = pd.read_csv(uploaded_file)
+    else:
+        # Reset file pointer if it's a file upload object
+        uploaded_file.seek(0)
+        logs = pd.read_csv(uploaded_file)
+    
     required_columns = {'DEPTH', 'VP', 'VS', 'RHO', 'VSH', 'SW', 'PHI'}
     if not required_columns.issubset(logs.columns):
         missing = required_columns - set(logs.columns)
@@ -409,6 +415,21 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
             logs[f'LFC_{case}'] = 0  # Default to undefined
         
         return logs, None  # No MC results for RPT models
+    
+    # Extract parameters from kwargs with defaults
+    rho_qz = kwargs.get('rho_qz', 2.65)
+    k_qz = kwargs.get('k_qz', 37.0)
+    mu_qz = kwargs.get('mu_qz', 44.0)
+    rho_sh = kwargs.get('rho_sh', 2.81)
+    k_sh = kwargs.get('k_sh', 15.0)
+    mu_sh = kwargs.get('mu_sh', 5.0)
+    rho_b = kwargs.get('rho_b', 1.09)
+    k_b = kwargs.get('k_b', 2.8)
+    rho_o = kwargs.get('rho_o', 0.78)
+    k_o = kwargs.get('k_o', 0.94)
+    rho_g = kwargs.get('rho_g', 0.25)
+    k_g = kwargs.get('k_g', 0.06)
+    sand_cutoff = kwargs.get('sand_cutoff', 0.12)
     
     # VRH function
     def vrh(volumes, k, mu):
@@ -460,14 +481,20 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
         vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI)
         vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI)
     elif model_choice == "Critical Porosity Model (Nur)":
+        critical_porosity = kwargs.get('critical_porosity', 0.4)
         vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, critical_porosity)
         vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, critical_porosity)
         vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, critical_porosity)
     elif model_choice == "Contact Theory (Hertz-Mindlin)":
+        coordination_number = kwargs.get('coordination_number', 9)
+        effective_pressure = kwargs.get('effective_pressure', 10)
         vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, coordination_number, effective_pressure)
         vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, coordination_number, effective_pressure)
         vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, coordination_number, effective_pressure)
     elif model_choice == "Dvorkin-Nur Soft Sand Model":
+        coordination_number = kwargs.get('coordination_number', 9)
+        effective_pressure = kwargs.get('effective_pressure', 10)
+        critical_porosity = kwargs.get('critical_porosity', 0.4)
         vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
         vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
         vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
@@ -569,12 +596,21 @@ def fit_avo_curve(angles, rc_values):
 # Main content area
 if uploaded_file is not None:
     try:
+        # Store the original file object
+        original_file = uploaded_file
+        
         # Process data with selected model
         logs, mc_results = process_data(
-            uploaded_file, 
+            original_file, 
             model_choice,
             include_uncertainty=include_uncertainty,
             mc_iterations=mc_iterations,
+            rho_qz=rho_qz, k_qz=k_qz, mu_qz=mu_qz,
+            rho_sh=rho_sh, k_sh=k_sh, mu_sh=mu_sh,
+            rho_b=rho_b, k_b=k_b,
+            rho_o=rho_o, k_o=k_o,
+            rho_g=rho_g, k_g=k_g,
+            sand_cutoff=sand_cutoff,
             critical_porosity=critical_porosity if 'critical_porosity' in locals() else None,
             coordination_number=coordination_number if 'coordination_number' in locals() else None,
             effective_pressure=effective_pressure if 'effective_pressure' in locals() else None
@@ -898,7 +934,7 @@ if uploaded_file is not None:
             plt.tight_layout()
             st.pyplot(fig4)
 
-        # Rock Physics Templates (RPT) - Modified Section
+        # Rock Physics Templates (RPT) - Corrected Section
         if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"] and rockphypy_available:
             st.header("Rock Physics Templates (RPT) with Gassmann Fluid Substitution")
             
@@ -929,14 +965,23 @@ if uploaded_file is not None:
                 plt.title(f"{model_choice.split(' ')[0]} RPT - {fluid.capitalize()} Case")
                 
                 # Add Gassmann fluid substitution points from logs
-                if uploaded_file is not None:
+                if original_file is not None:
                     try:
+                        # Reset file pointer to beginning
+                        original_file.seek(0)
+                        
                         # Process data with Gassmann model
                         logs_gassmann, _ = process_data(
-                            uploaded_file, 
+                            original_file, 
                             "Gassmann's Fluid Substitution",
                             include_uncertainty=False,
-                            mc_iterations=1
+                            mc_iterations=1,
+                            rho_qz=rho_qz, k_qz=k_qz, mu_qz=mu_qz,
+                            rho_sh=rho_sh, k_sh=k_sh, mu_sh=mu_sh,
+                            rho_b=rho_b, k_b=k_b,
+                            rho_o=rho_o, k_o=k_o,
+                            rho_g=rho_g, k_g=k_g,
+                            sand_cutoff=sand_cutoff
                         )
                         
                         # Filter sand intervals (VSH < sand_cutoff)
@@ -954,9 +999,12 @@ if uploaded_file is not None:
                             color = 'green'
                             label = 'Gassmann Oil'
                         
-                        # Plot the points
-                        plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
-                        plt.legend()
+                        # Plot the points if we have valid data
+                        if len(ip) > 0 and len(vpvs) > 0:
+                            plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
+                            plt.legend()
+                        else:
+                            st.warning(f"No valid {fluid} sand points found for plotting")
                         
                     except Exception as e:
                         st.warning(f"Could not plot Gassmann points: {str(e)}")
