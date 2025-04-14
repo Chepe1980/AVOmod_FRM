@@ -397,6 +397,19 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
         missing = required_columns - set(logs.columns)
         raise ValueError(f"Missing required columns: {missing}")
     
+    # Skip fluid substitution for RPT models (they're visualization-only)
+    if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+        # Just add placeholder columns for consistency
+        for case in ['B', 'O', 'G']:
+            logs[f'VP_FRM{case}'] = logs.VP
+            logs[f'VS_FRM{case}'] = logs.VS
+            logs[f'RHO_FRM{case}'] = logs.RHO
+            logs[f'IP_FRM{case}'] = logs.VP * logs.RHO
+            logs[f'VPVS_FRM{case}'] = logs.VP/logs.VS
+            logs[f'LFC_{case}'] = 0  # Default to undefined
+        
+        return logs, None  # No MC results for RPT models
+    
     # VRH function
     def vrh(volumes, k, mu):
         f = np.array(volumes).T
@@ -584,40 +597,42 @@ if uploaded_file is not None:
         ll = logs.loc[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]
         cluster = np.repeat(np.expand_dims(ll['LFC_B'].values,1), 100, 1)
 
-        # Create the well log figure
-        fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12, 8))
-        ax[0].plot(ll.VSH, ll.DEPTH, '-g', label='Vsh')
-        ax[0].plot(ll.SW, ll.DEPTH, '-b', label='Sw')
-        ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
-        ax[1].plot(ll.IP_FRMG, ll.DEPTH, '-r', label='Gas')
-        ax[1].plot(ll.IP_FRMB, ll.DEPTH, '-b', label='Brine')
-        ax[1].plot(ll.IP, ll.DEPTH, '-', color='0.5', label='Original')
-        ax[2].plot(ll.VPVS_FRMG, ll.DEPTH, '-r', label='Gas')
-        ax[2].plot(ll.VPVS_FRMB, ll.DEPTH, '-b', label='Brine')
-        ax[2].plot(ll.VPVS, ll.DEPTH, '-', color='0.5', label='Original')
-        im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=4)
+        # Only show well log visualization for non-RPT models
+        if model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+            # Create the well log figure
+            fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12, 8))
+            ax[0].plot(ll.VSH, ll.DEPTH, '-g', label='Vsh')
+            ax[0].plot(ll.SW, ll.DEPTH, '-b', label='Sw')
+            ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
+            ax[1].plot(ll.IP_FRMG, ll.DEPTH, '-r', label='Gas')
+            ax[1].plot(ll.IP_FRMB, ll.DEPTH, '-b', label='Brine')
+            ax[1].plot(ll.IP, ll.DEPTH, '-', color='0.5', label='Original')
+            ax[2].plot(ll.VPVS_FRMG, ll.DEPTH, '-r', label='Gas')
+            ax[2].plot(ll.VPVS_FRMB, ll.DEPTH, '-b', label='Brine')
+            ax[2].plot(ll.VPVS, ll.DEPTH, '-', color='0.5', label='Original')
+            im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=4)
 
-        cbar = plt.colorbar(im, ax=ax[3])
-        cbar.set_label((12*' ').join(['undef', 'brine', 'oil', 'gas', 'shale']))
-        cbar.set_ticks(range(0,5))
-        cbar.set_ticklabels(['']*5)
+            cbar = plt.colorbar(im, ax=ax[3])
+            cbar.set_label((12*' ').join(['undef', 'brine', 'oil', 'gas', 'shale']))
+            cbar.set_ticks(range(0,5))
+            cbar.set_ticklabels(['']*5)
 
-        for i in ax[:-1]:
-            i.set_ylim(ztop,zbot)
-            i.invert_yaxis()
-            i.grid()
-            i.locator_params(axis='x', nbins=4)
-        ax[0].legend(fontsize='small', loc='lower right')
-        ax[1].legend(fontsize='small', loc='lower right')
-        ax[2].legend(fontsize='small', loc='lower right')
-        ax[0].set_xlabel("Vcl/phi/Sw"); ax[0].set_xlim(-.1,1.1)
-        ax[1].set_xlabel("Ip [m/s*g/cc]"); ax[1].set_xlim(6000,15000)
-        ax[2].set_xlabel("Vp/Vs"); ax[2].set_xlim(1.5,2)
-        ax[3].set_xlabel('LFC')
-        ax[1].set_yticklabels([]); ax[2].set_yticklabels([]); ax[3].set_yticklabels([]); ax[3].set_xticklabels([])
-        
-        # Display the well log plot
-        st.pyplot(fig)
+            for i in ax[:-1]:
+                i.set_ylim(ztop,zbot)
+                i.invert_yaxis()
+                i.grid()
+                i.locator_params(axis='x', nbins=4)
+            ax[0].legend(fontsize='small', loc='lower right')
+            ax[1].legend(fontsize='small', loc='lower right')
+            ax[2].legend(fontsize='small', loc='lower right')
+            ax[0].set_xlabel("Vcl/phi/Sw"); ax[0].set_xlim(-.1,1.1)
+            ax[1].set_xlabel("Ip [m/s*g/cc]"); ax[1].set_xlim(6000,15000)
+            ax[2].set_xlabel("Vp/Vs"); ax[2].set_xlim(1.5,2)
+            ax[3].set_xlabel('LFC')
+            ax[1].set_yticklabels([]); ax[2].set_yticklabels([]); ax[3].set_yticklabels([]); ax[3].set_xticklabels([])
+            
+            # Display the well log plot
+            st.pyplot(fig)
 
         # Interactive Crossplot
         st.header("Interactive Crossplots with Selection")
@@ -649,7 +664,7 @@ if uploaded_file is not None:
         st.pyplot(fig2)
 
         # 3D Crossplot if enabled
-        if show_3d_crossplot:
+        if show_3d_crossplot and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
             st.header("3D Crossplot")
             fig3d = plt.figure(figsize=(10, 8))
             ax3d = fig3d.add_subplot(111, projection='3d')
@@ -671,7 +686,7 @@ if uploaded_file is not None:
             st.pyplot(fig3d)
 
         # Histograms if enabled
-        if show_histograms:
+        if show_histograms and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
             st.header("Property Distributions")
             fig_hist, ax_hist = plt.subplots(2, 2, figsize=(12, 8))
             
@@ -704,186 +719,187 @@ if uploaded_file is not None:
             st.pyplot(fig_hist)
 
         # AVO Modeling
-        st.header("AVO Modeling")
-        middle_top = ztop + (zbot - ztop) * 0.4
-        middle_bot = ztop + (zbot - ztop) * 0.6
-        
-        cases = ['Brine', 'Oil', 'Gas']
-        case_data = {
-            'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
-            'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'g'},
-            'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'}
-        }
-        
-        wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
-        t_samp = np.arange(0, 0.5, 0.0001)
-        t_middle = 0.2
-        
-        fig3, (ax_wavelet, ax_avo) = plt.subplots(1, 2, figsize=(12, 5), gridspec_kw={'width_ratios': [1, 2]})
-        
-        ax_wavelet.plot(wlt_time, wlt_amp, color='purple', linewidth=2)
-        ax_wavelet.fill_between(wlt_time, wlt_amp, color='purple', alpha=0.3)
-        ax_wavelet.set_title(f"Wavelet ({wavelet_freq} Hz)")
-        ax_wavelet.set_xlabel("Time (s)")
-        ax_wavelet.set_ylabel("Amplitude")
-        ax_wavelet.grid(True)
-        
-        rc_min, rc_max = st.slider(
-            "Reflection Coefficient Range",
-            -0.5, 0.5, (-0.2, 0.2),
-            step=0.01,
-            key='rc_range'
-        )
-        
-        angles = np.arange(min_angle, max_angle + 1, angle_step)
-        
-        # Store AVO attributes for Smith-Gidlow analysis
-        avo_attributes = {'Case': [], 'Intercept': [], 'Gradient': [], 'Fluid_Factor': []}
-        
-        for case in cases:
-            vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
-            vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
-            rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+        if model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+            st.header("AVO Modeling")
+            middle_top = ztop + (zbot - ztop) * 0.4
+            middle_bot = ztop + (zbot - ztop) * 0.6
             
-            vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
-            vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
-            rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+            cases = ['Brine', 'Oil', 'Gas']
+            case_data = {
+                'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
+                'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'g'},
+                'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'}
+            }
             
-            # Calculate reflection coefficients
-            rc = []
-            for angle in angles:
-                rc.append(calculate_reflection_coefficients(
-                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
-                ))
+            wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
+            t_samp = np.arange(0, 0.5, 0.0001)
+            t_middle = 0.2
             
-            # Fit AVO curve to get intercept and gradient
-            intercept, gradient, _ = fit_avo_curve(angles, rc)
-            fluid_factor = intercept + 1.16 * (vp_upper/vs_upper) * (intercept - gradient)
+            fig3, (ax_wavelet, ax_avo) = plt.subplots(1, 2, figsize=(12, 5), gridspec_kw={'width_ratios': [1, 2]})
             
-            # Store attributes for Smith-Gidlow analysis
-            avo_attributes['Case'].append(case)
-            avo_attributes['Intercept'].append(intercept)
-            avo_attributes['Gradient'].append(gradient)
-            avo_attributes['Fluid_Factor'].append(fluid_factor)
+            ax_wavelet.plot(wlt_time, wlt_amp, color='purple', linewidth=2)
+            ax_wavelet.fill_between(wlt_time, wlt_amp, color='purple', alpha=0.3)
+            ax_wavelet.set_title(f"Wavelet ({wavelet_freq} Hz)")
+            ax_wavelet.set_xlabel("Time (s)")
+            ax_wavelet.set_ylabel("Amplitude")
+            ax_wavelet.grid(True)
             
-            # Plot AVO curve
-            ax_avo.plot(angles, rc, f"{case_data[case]['color']}-", label=f"{case}")
-        
-        ax_avo.set_title("AVO Reflection Coefficients (Middle Interface)")
-        ax_avo.set_xlabel("Angle (degrees)")
-        ax_avo.set_ylabel("Reflection Coefficient")
-        ax_avo.set_ylim(rc_min, rc_max)
-        ax_avo.grid(True)
-        ax_avo.legend()
-        
-        st.pyplot(fig3)
-
-        # Smith-Gidlow AVO Analysis
-        if show_smith_gidlow:
-            st.header("Smith-Gidlow AVO Attributes")
+            rc_min, rc_max = st.slider(
+                "Reflection Coefficient Range",
+                -0.5, 0.5, (-0.2, 0.2),
+                step=0.01,
+                key='rc_range'
+            )
             
-            # Create DataFrame for AVO attributes
-            avo_df = pd.DataFrame(avo_attributes)
+            angles = np.arange(min_angle, max_angle + 1, angle_step)
             
-            # Display attributes table
-            if not avo_df.empty:
-                numeric_cols = avo_df.select_dtypes(include=[np.number]).columns
-                st.dataframe(avo_df.style.format("{:.4f}", subset=numeric_cols))
-            else:
-                st.warning("No AVO attributes calculated")
+            # Store AVO attributes for Smith-Gidlow analysis
+            avo_attributes = {'Case': [], 'Intercept': [], 'Gradient': [], 'Fluid_Factor': []}
             
-            # Plot intercept vs gradient
-            fig_sg, ax_sg = plt.subplots(figsize=(8, 6))
-            colors = {'Brine': 'blue', 'Oil': 'green', 'Gas': 'red'}
-            
-            for idx, row in avo_df.iterrows():
-                ax_sg.scatter(row['Intercept'], row['Gradient'], 
-                             color=colors[row['Case']], s=100, label=row['Case'])
-                ax_sg.text(row['Intercept'], row['Gradient'], row['Case'], 
-                          fontsize=9, ha='right', va='bottom')
-            
-            # Add background classification
-            x = np.linspace(-0.5, 0.5, 100)
-            ax_sg.plot(x, -x, 'k--', alpha=0.3)  # Typical brine line
-            ax_sg.plot(x, -4*x, 'k--', alpha=0.3)  # Typical gas line
-            
-            ax_sg.set_xlabel('Intercept (A)')
-            ax_sg.set_ylabel('Gradient (B)')
-            ax_sg.set_title('Smith-Gidlow AVO Crossplot')
-            ax_sg.grid(True)
-            ax_sg.axhline(0, color='k', alpha=0.3)
-            ax_sg.axvline(0, color='k', alpha=0.3)
-            ax_sg.set_xlim(-0.3, 0.3)
-            ax_sg.set_ylim(-0.3, 0.3)
-            
-            st.pyplot(fig_sg)
-            
-            # Fluid Factor analysis
-            st.subheader("Fluid Factor Analysis")
-            fig_ff, ax_ff = plt.subplots(figsize=(8, 4))
-            ax_ff.bar(avo_df['Case'], avo_df['Fluid_Factor'], 
-                     color=[colors[c] for c in avo_df['Case']])
-            ax_ff.set_ylabel('Fluid Factor')
-            ax_ff.set_title('Fluid Factor by Fluid Type')
-            ax_ff.grid(True)
-            st.pyplot(fig_ff)
-
-        # Synthetic gathers
-        st.header("Synthetic Seismic Gathers (Middle Interface)")
-        time_min, time_max = st.slider(
-            "Time Range for Synthetic Gathers (s)",
-            0.0, 0.5, (0.15, 0.25),
-            step=0.01,
-            key='time_range'
-        )
-        
-        fig4, ax4 = plt.subplots(1, 3, figsize=(18, 5))
-        
-        for idx, case in enumerate(cases):
-            vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
-            vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
-            rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
-            
-            vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
-            vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
-            rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
-            
-            syn_gather = []
-            for angle in angles:
-                rc = calculate_reflection_coefficients(
-                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
-                )
+            for case in cases:
+                vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+                vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+                rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
                 
-                rc_series = np.zeros(len(t_samp))
-                idx_middle = np.argmin(np.abs(t_samp - t_middle))
-                rc_series[idx_middle] = rc
+                vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+                vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+                rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
                 
-                syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
-                syn_gather.append(syn_trace)
+                # Calculate reflection coefficients
+                rc = []
+                for angle in angles:
+                    rc.append(calculate_reflection_coefficients(
+                        vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                    ))
+                
+                # Fit AVO curve to get intercept and gradient
+                intercept, gradient, _ = fit_avo_curve(angles, rc)
+                fluid_factor = intercept + 1.16 * (vp_upper/vs_upper) * (intercept - gradient)
+                
+                # Store attributes for Smith-Gidlow analysis
+                avo_attributes['Case'].append(case)
+                avo_attributes['Intercept'].append(intercept)
+                avo_attributes['Gradient'].append(gradient)
+                avo_attributes['Fluid_Factor'].append(fluid_factor)
+                
+                # Plot AVO curve
+                ax_avo.plot(angles, rc, f"{case_data[case]['color']}-", label=f"{case}")
             
-            syn_gather = np.array(syn_gather)
+            ax_avo.set_title("AVO Reflection Coefficients (Middle Interface)")
+            ax_avo.set_xlabel("Angle (degrees)")
+            ax_avo.set_ylabel("Reflection Coefficient")
+            ax_avo.set_ylim(rc_min, rc_max)
+            ax_avo.grid(True)
+            ax_avo.legend()
             
-            extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
-            im = ax4[idx].imshow(syn_gather.T, aspect='auto', extent=extent,
-                               cmap=selected_cmap, vmin=-np.max(np.abs(syn_gather)), 
-                               vmax=np.max(np.abs(syn_gather)))
+            st.pyplot(fig3)
+
+            # Smith-Gidlow AVO Analysis
+            if show_smith_gidlow:
+                st.header("Smith-Gidlow AVO Attributes")
+                
+                # Create DataFrame for AVO attributes
+                avo_df = pd.DataFrame(avo_attributes)
+                
+                # Display attributes table
+                if not avo_df.empty:
+                    numeric_cols = avo_df.select_dtypes(include=[np.number]).columns
+                    st.dataframe(avo_df.style.format("{:.4f}", subset=numeric_cols))
+                else:
+                    st.warning("No AVO attributes calculated")
+                
+                # Plot intercept vs gradient
+                fig_sg, ax_sg = plt.subplots(figsize=(8, 6))
+                colors = {'Brine': 'blue', 'Oil': 'green', 'Gas': 'red'}
+                
+                for idx, row in avo_df.iterrows():
+                    ax_sg.scatter(row['Intercept'], row['Gradient'], 
+                                 color=colors[row['Case']], s=100, label=row['Case'])
+                    ax_sg.text(row['Intercept'], row['Gradient'], row['Case'], 
+                              fontsize=9, ha='right', va='bottom')
+                
+                # Add background classification
+                x = np.linspace(-0.5, 0.5, 100)
+                ax_sg.plot(x, -x, 'k--', alpha=0.3)  # Typical brine line
+                ax_sg.plot(x, -4*x, 'k--', alpha=0.3)  # Typical gas line
+                
+                ax_sg.set_xlabel('Intercept (A)')
+                ax_sg.set_ylabel('Gradient (B)')
+                ax_sg.set_title('Smith-Gidlow AVO Crossplot')
+                ax_sg.grid(True)
+                ax_sg.axhline(0, color='k', alpha=0.3)
+                ax_sg.axvline(0, color='k', alpha=0.3)
+                ax_sg.set_xlim(-0.3, 0.3)
+                ax_sg.set_ylim(-0.3, 0.3)
+                
+                st.pyplot(fig_sg)
+                
+                # Fluid Factor analysis
+                st.subheader("Fluid Factor Analysis")
+                fig_ff, ax_ff = plt.subplots(figsize=(8, 4))
+                ax_ff.bar(avo_df['Case'], avo_df['Fluid_Factor'], 
+                         color=[colors[c] for c in avo_df['Case']])
+                ax_ff.set_ylabel('Fluid Factor')
+                ax_ff.set_title('Fluid Factor by Fluid Type')
+                ax_ff.grid(True)
+                st.pyplot(fig_ff)
+
+            # Synthetic gathers
+            st.header("Synthetic Seismic Gathers (Middle Interface)")
+            time_min, time_max = st.slider(
+                "Time Range for Synthetic Gathers (s)",
+                0.0, 0.5, (0.15, 0.25),
+                step=0.01,
+                key='time_range'
+            )
             
-            props_text = f"Vp: {vp_middle:.0f} m/s\nVs: {vs_middle:.0f} m/s\nRho: {rho_middle:.2f} g/cc"
-            ax4[idx].text(0.05, 0.95, props_text, transform=ax4[idx].transAxes,
-                         fontsize=9, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
+            fig4, ax4 = plt.subplots(1, 3, figsize=(18, 5))
             
-            ax4[idx].set_title(f"{case} Case", fontweight='bold')
-            ax4[idx].set_xlabel("Angle (degrees)")
-            ax4[idx].set_ylabel("Time (s)")
-            ax4[idx].set_ylim(time_max, time_min)
+            for idx, case in enumerate(cases):
+                vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+                vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+                rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+                
+                vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+                vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+                rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+                
+                syn_gather = []
+                for angle in angles:
+                    rc = calculate_reflection_coefficients(
+                        vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                    )
+                    
+                    rc_series = np.zeros(len(t_samp))
+                    idx_middle = np.argmin(np.abs(t_samp - t_middle))
+                    rc_series[idx_middle] = rc
+                    
+                    syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+                    syn_gather.append(syn_trace)
+                
+                syn_gather = np.array(syn_gather)
+                
+                extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+                im = ax4[idx].imshow(syn_gather.T, aspect='auto', extent=extent,
+                                   cmap=selected_cmap, vmin=-np.max(np.abs(syn_gather)), 
+                                   vmax=np.max(np.abs(syn_gather)))
+                
+                props_text = f"Vp: {vp_middle:.0f} m/s\nVs: {vs_middle:.0f} m/s\nRho: {rho_middle:.2f} g/cc"
+                ax4[idx].text(0.05, 0.95, props_text, transform=ax4[idx].transAxes,
+                             fontsize=9, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
+                
+                ax4[idx].set_title(f"{case} Case", fontweight='bold')
+                ax4[idx].set_xlabel("Angle (degrees)")
+                ax4[idx].set_ylabel("Time (s)")
+                ax4[idx].set_ylim(time_max, time_min)
+                
+                plt.colorbar(im, ax=ax4[idx], label='Amplitude')
             
-            plt.colorbar(im, ax=ax4[idx], label='Amplitude')
-        
-        plt.tight_layout()
-        st.pyplot(fig4)
+            plt.tight_layout()
+            st.pyplot(fig4)
 
         # Rock Physics Templates (RPT) - New Section
-        if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
+        if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"] and rockphypy_available:
             st.header("Rock Physics Templates (RPT)")
             
             # Model parameters
@@ -919,7 +935,7 @@ if uploaded_file is not None:
             st.pyplot(fig_rpt)
 
         # Uncertainty Analysis Results
-        if include_uncertainty and mc_results:
+        if include_uncertainty and mc_results and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
             st.header("Uncertainty Analysis Results")
             
             # Create summary statistics
@@ -1045,19 +1061,19 @@ if uploaded_file is not None:
                 
                 results = []
                 for plot_name in plot_export_options:
-                    if plot_name == "Well Log Visualization":
+                    if plot_name == "Well Log Visualization" and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         success, error = export_plot(fig, plot_name, "well_log_visualization.png")
                     elif plot_name == "2D Crossplots":
                         success, error = export_plot(fig2, plot_name, "2d_crossplots.png")
-                    elif plot_name == "3D Crossplot" and show_3d_crossplot:
+                    elif plot_name == "3D Crossplot" and show_3d_crossplot and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         success, error = export_plot(fig3d, plot_name, "3d_crossplot.png")
-                    elif plot_name == "Histograms" and show_histograms:
+                    elif plot_name == "Histograms" and show_histograms and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         success, error = export_plot(fig_hist, plot_name, "histograms.png")
-                    elif plot_name == "AVO Analysis":
+                    elif plot_name == "AVO Analysis" and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         success, error = export_plot(fig3, plot_name, "avo_analysis.png")
-                    elif plot_name == "Smith-Gidlow Analysis" and show_smith_gidlow:
+                    elif plot_name == "Smith-Gidlow Analysis" and show_smith_gidlow and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         success, error = export_plot(fig_sg, plot_name, "smith_gidlow_analysis.png")
-                    elif plot_name == "Uncertainty Analysis" and include_uncertainty:
+                    elif plot_name == "Uncertainty Analysis" and include_uncertainty and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         # Need to handle multiple figures for uncertainty
                         success1, error1 = export_plot(fig_unc, "Uncertainty_Distributions", "uncertainty_distributions.png")
                         success2, error2 = export_plot(fig_avo_unc, "AVO_Uncertainty", "avo_uncertainty.png")
