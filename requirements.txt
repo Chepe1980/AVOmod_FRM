@@ -6,5 +6,5 @@ matplotlib
 streamlit-bokeh-events
 scipy
 rockphypy
-
+PyWavelets
 
