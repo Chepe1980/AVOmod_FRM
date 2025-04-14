@@ -159,7 +159,7 @@ def frm(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi):
     vp2 = np.sqrt((k_s2 + (4./3)*mu2) / rho2)
     vs2 = np.sqrt(mu2 / rho2)
 
-    return vp2*1000, vs2*1000, rho2, k_s2  # Convert back to m/s
+    return vp2*1000, vs2*1000, rho2, k_s2
 
 def critical_porosity_model(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi, phi_c):
     """Critical Porosity Model (Nur et al.)"""
@@ -911,28 +911,36 @@ if uploaded_file is not None:
             phi = np.linspace(0.1, rpt_phi_c, 10)  # Porosity range
             sw = np.linspace(0, 1, 5)              # Water saturation
             
-            # Create separate figures for each case (since QI.plot_rpt doesn't accept ax parameter)
-            st.subheader("Gas Case RPT")
-            fig_rpt_gas = plt.figure(figsize=(8, 6))
-            if model_choice == "Soft Sand RPT (rockphypy)":
-                Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
-            else:
-                Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
-            plt.title(f"{model_choice.split(' ')[0]} RPT - Gas Case")
-            st.pyplot(fig_rpt_gas)
+            # Function to generate and display RPT plot
+            def plot_rpt_to_streamlit(title, fluid='gas'):
+                plt.figure(figsize=(8, 6))
+                
+                if model_choice == "Soft Sand RPT (rockphypy)":
+                    Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                else:
+                    Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                
+                if fluid == 'gas':
+                    QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
+                else:
+                    QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
+                
+                plt.title(f"{model_choice.split(' ')[0]} RPT - {fluid.capitalize()} Case")
+                
+                # Save plot to a buffer and display in Streamlit
+                buf = BytesIO()
+                plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+                buf.seek(0)
+                st.image(buf, use_column_width=True)
+                plt.close()
             
+            # Display Gas Case
+            st.subheader("Gas Case RPT")
+            plot_rpt_to_streamlit("Gas Case RPT", fluid='gas')
+            
+            # Display Oil Case
             st.subheader("Oil Case RPT")
-            fig_rpt_oil = plt.figure(figsize=(8, 6))
-            if model_choice == "Soft Sand RPT (rockphypy)":
-                Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
-            else:
-                Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
-            plt.title(f"{model_choice.split(' ')[0]} RPT - Oil Case")
-            st.pyplot(fig_rpt_oil)
+            plot_rpt_to_streamlit("Oil Case RPT", fluid='oil')
 
         # Uncertainty Analysis Results
         if include_uncertainty and mc_results and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
@@ -1086,15 +1094,41 @@ if uploaded_file is not None:
                             results.append(f"✗ Partially exported {plot_name}: {', '.join(errors)}")
                         continue
                     elif plot_name == "RPT Crossplots" and model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
-                        # Handle both RPT figures
-                        success1, error1 = export_plot(fig_rpt_gas, "RPT_Gas", "rpt_gas.png")
-                        success2, error2 = export_plot(fig_rpt_oil, "RPT_Oil", "rpt_oil.png")
-                        
-                        if all([success1, success2]):
-                            results.append(f"✓ Successfully exported {plot_name} plots")
+                        # Create temporary figures for RPT export
+                        fig_rpt_gas = plt.figure()
+                        if model_choice == "Soft Sand RPT (rockphypy)":
+                            Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
                         else:
-                            errors = [e for e in [error1, error2] if e]
-                            results.append(f"✗ Partially exported {plot_name}: {', '.join(errors)}")
+                            Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+                        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
+                        plt.title(f"{model_choice.split(' ')[0]} RPT - Gas Case")
+                        buf_gas = BytesIO()
+                        plt.savefig(buf_gas, format='png', dpi=150, bbox_inches='tight')
+                        buf_gas.seek(0)
+                        plt.close()
+                        
+                        fig_rpt_oil = plt.figure()
+                        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
+                        plt.title(f"{model_choice.split(' ')[0]} RPT - Oil Case")
+                        buf_oil = BytesIO()
+                        plt.savefig(buf_oil, format='png', dpi=150, bbox_inches='tight')
+                        buf_oil.seek(0)
+                        plt.close()
+                        
+                        # Create download buttons
+                        st.download_button(
+                            label="Download Gas RPT",
+                            data=buf_gas.getvalue(),
+                            file_name="rpt_gas.png",
+                            mime="image/png"
+                        )
+                        st.download_button(
+                            label="Download Oil RPT",
+                            data=buf_oil.getvalue(),
+                            file_name="rpt_oil.png",
+                            mime="image/png"
+                        )
+                        results.append("✓ Successfully exported RPT plots")
                         continue
                     else:
                         continue
