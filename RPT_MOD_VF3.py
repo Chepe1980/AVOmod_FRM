@@ -703,57 +703,81 @@ def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wave
     """Plot CWT analysis with time on y-axis and angles on x-axis"""
     st.subheader("Time-Frequency Analysis (CWT)")
     
-    scales = np.arange(cwt_scales[0], cwt_scales[1]+1)
-    
-    fig_cwt, ax_cwt = plt.subplots(3, len(all_gathers), figsize=(18, 12))
-    
-    for col_idx, case in enumerate(all_gathers.keys()):
-        syn_gather = all_gathers[case]
+    try:
+        # Ensure scales is a numpy array
+        scales = np.arange(cwt_scales[0], cwt_scales[1]+1)
         
-        # Initialize array to store CWT magnitudes for all angles
-        cwt_magnitudes = np.zeros((len(t_samp), len(angles)))
+        fig_cwt, ax_cwt = plt.subplots(3, len(all_gathers), figsize=(18, 12))
         
-        for i, angle in enumerate(angles):
-            trace = syn_gather[i]
-            coefficients, _ = pywt.cwt(trace, scales, cwt_wavelet, sampling_period=t_samp[1]-t_samp[0])
-            cwt_magnitudes[:, i] = np.sum(np.abs(coefficients), axis=0)  # Sum across scales
+        for col_idx, case in enumerate(all_gathers.keys()):
+            syn_gather = all_gathers[case]
+            
+            # Initialize array to store CWT magnitudes
+            cwt_magnitudes = np.zeros((len(t_samp), len(angles)))
+            
+            for i, angle in enumerate(angles):
+                trace = syn_gather[i]
+                if len(trace) == 0:
+                    continue
+                    
+                coefficients, _ = pywt.cwt(trace, scales, cwt_wavelet, 
+                                         sampling_period=t_samp[1]-t_samp[0])
+                
+                # Sum absolute coefficients across scales
+                if coefficients.size > 0:
+                    cwt_magnitudes[:, i] = np.sum(np.abs(coefficients), axis=0)
+            
+            # Only proceed if we have valid data
+            if cwt_magnitudes.size == 0:
+                st.warning(f"No valid CWT data for {case} case")
+                continue
+                
+            # Normalize for display
+            cwt_magnitudes = cwt_magnitudes / np.max(cwt_magnitudes)
+            
+            # Plot CWT magnitude (time vs. angle)
+            extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+            im = ax_cwt[0, col_idx].imshow(
+                cwt_magnitudes, 
+                aspect='auto', 
+                extent=extent,
+                cmap='jet', 
+                vmin=0, 
+                vmax=1
+            )
+            ax_cwt[0, col_idx].set_title(f"{case} - CWT Magnitude")
+            ax_cwt[0, col_idx].set_xlabel("Angle (degrees)")
+            ax_cwt[0, col_idx].set_ylabel("Time (s)")
+            plt.colorbar(im, ax=ax_cwt[0, col_idx], label='Normalized Magnitude')
+            
+            # Plot time series at middle angle
+            mid_angle_idx = len(angles) // 2
+            ax_cwt[1, col_idx].plot(t_samp, syn_gather[mid_angle_idx], 'k-')
+            ax_cwt[1, col_idx].set_title(f"{case} - Time Series (@ {angles[mid_angle_idx]}°)")
+            ax_cwt[1, col_idx].set_xlabel("Time (s)")
+            ax_cwt[1, col_idx].set_ylabel("Amplitude")
+            ax_cwt[1, col_idx].grid(True)
+            
+            # Plot dominant scale with bounds checking
+            if cwt_magnitudes.size > 0 and len(scales) > 0:
+                max_indices = np.argmax(np.abs(cwt_magnitudes), axis=0)
+                # Ensure indices are within bounds
+                max_indices = np.clip(max_indices, 0, len(scales)-1)
+                dominant_freqs = scales[max_indices]
+                
+                ax_cwt[2, col_idx].plot(angles, dominant_freqs, 'r-')
+                ax_cwt[2, col_idx].set_title(f"{case} - Dominant Scale by Angle")
+                ax_cwt[2, col_idx].set_xlabel("Angle (degrees)")
+                ax_cwt[2, col_idx].set_ylabel("Dominant Scale")
+                ax_cwt[2, col_idx].grid(True)
         
-        # Normalize for display
-        cwt_magnitudes = cwt_magnitudes / np.max(cwt_magnitudes)
+        plt.tight_layout()
+        st.pyplot(fig_cwt)
         
-        # Plot CWT magnitude (time vs. angle)
-        extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
-        im = ax_cwt[0, col_idx].imshow(
-            cwt_magnitudes, 
-            aspect='auto', 
-            extent=extent,
-            cmap='jet', 
-            vmin=0, 
-            vmax=1
-        )
-        ax_cwt[0, col_idx].set_title(f"{case} - CWT Magnitude")
-        ax_cwt[0, col_idx].set_xlabel("Angle (degrees)")
-        ax_cwt[0, col_idx].set_ylabel("Time (s)")
-        plt.colorbar(im, ax=ax_cwt[0, col_idx], label='Normalized Magnitude')
-        
-        # Plot time series at middle angle
-        mid_angle_idx = len(angles) // 2
-        ax_cwt[1, col_idx].plot(t_samp, syn_gather[mid_angle_idx], 'k-')
-        ax_cwt[1, col_idx].set_title(f"{case} - Time Series (@ {angles[mid_angle_idx]}°)")
-        ax_cwt[1, col_idx].set_xlabel("Time (s)")
-        ax_cwt[1, col_idx].set_ylabel("Amplitude")
-        ax_cwt[1, col_idx].grid(True)
-        
-# Plot dominant frequency
-dominant_freqs = scales[np.argmax(np.abs(cwt_magnitudes), axis=0)]  # Properly closed parentheses
-ax_cwt[2, col_idx].plot(angles, dominant_freqs, 'r-')
-ax_cwt[2, col_idx].set_title(f"{case} - Dominant Scale by Angle")
-ax_cwt[2, col_idx].set_xlabel("Angle (degrees)")
-ax_cwt[2, col_idx].set_ylabel("Dominant Scale")
-ax_cwt[2, col_idx].grid(True)
-    
-plt.tight_layout()
-st.pyplot(fig_cwt)
+    except Exception as e:
+        st.error(f"Error in CWT analysis: {str(e)}")
+        st.error(f"Scales shape: {scales.shape if 'scales' in locals() else 'undefined'}")
+        st.error(f"CWT magnitudes shape: {cwt_magnitudes.shape if 'cwt_magnitudes' in locals() else 'undefined'}")
 
 def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
     """Plot spectral comparison at selected angles"""
