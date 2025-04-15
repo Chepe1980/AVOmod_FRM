@@ -744,13 +744,13 @@ def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wave
         ax_cwt[1, col_idx].set_ylabel("Amplitude")
         ax_cwt[1, col_idx].grid(True)
         
-        # Plot dominant frequency
-        dominant_freqs = scales[np.argmax(np.abs(cwt_magnitudes), :]
-        ax_cwt[2, col_idx].plot(angles, dominant_freqs, 'r-')
-        ax_cwt[2, col_idx].set_title(f"{case} - Dominant Scale by Angle")
-        ax_cwt[2, col_idx].set_xlabel("Angle (degrees)")
-        ax_cwt[2, col_idx].set_ylabel("Dominant Scale")
-        ax_cwt[2, col_idx].grid(True)
+# Plot dominant frequency
+dominant_freqs = scales[np.argmax(np.abs(cwt_magnitudes), :]  # Fixed parenthesis
+ax_cwt[2, col_idx].plot(angles, dominant_freqs, 'r-')
+ax_cwt[2, col_idx].set_title(f"{case} - Dominant Scale by Angle")
+ax_cwt[2, col_idx].set_xlabel("Angle (degrees)")
+ax_cwt[2, col_idx].set_ylabel("Dominant Scale")
+ax_cwt[2, col_idx].grid(True)
     
     plt.tight_layout()
     st.pyplot(fig_cwt)
