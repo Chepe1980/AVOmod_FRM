@@ -752,8 +752,8 @@ ax_cwt[2, col_idx].set_xlabel("Angle (degrees)")
 ax_cwt[2, col_idx].set_ylabel("Dominant Scale")
 ax_cwt[2, col_idx].grid(True)
     
-    plt.tight_layout()
-    st.pyplot(fig_cwt)
+plt.tight_layout()
+st.pyplot(fig_cwt)
 
 def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
     """Plot spectral comparison at selected angles"""
