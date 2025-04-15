@@ -148,6 +148,69 @@ def handle_errors(func):
     return wrapper
 
 @handle_errors
+def gassmann_fluid_substitution(vp, vs, rho, phi, k_min, mu_min, rho_min, k_fl, rho_fl):
+    """Gassmann's fluid substitution"""
+    # Dry rock moduli from input velocities
+    k_dry = rho*(vp**2 - (4/3)*vs**2)
+    mu_dry = rho*vs**2
+    
+    # Fluid substitution
+    k_sat = k_dry + (1 - k_dry/k_min)**2 / (phi/k_fl + (1-phi)/k_min - k_dry/k_min**2)
+    mu_sat = mu_dry
+    rho_sat = rho + phi*(rho_fl - rho)
+    
+    # Calculate new velocities
+    vp_sat = np.sqrt((k_sat + (4/3)*mu_sat)/rho_sat)
+    vs_sat = np.sqrt(mu_sat/rho_sat)
+    
+    return vp_sat, vs_sat, rho_sat
+
+@handle_errors
+def critical_porosity_model(vp, vs, rho, phi, phi_c, k_min, mu_min, rho_min):
+    """Critical porosity model (Nur)"""
+    # Calculate dry rock moduli
+    k_dry = k_min*(1 - phi/phi_c)
+    mu_dry = mu_min*(1 - phi/phi_c)
+    
+    # Calculate saturated velocities
+    vp_sat = np.sqrt((k_dry + (4/3)*mu_dry)/rho)
+    vs_sat = np.sqrt(mu_dry/rho)
+    
+    return vp_sat, vs_sat, rho
+
+@handle_errors
+def hertz_mindlin(k_min, mu_min, phi, Cn, sigma, rho_min):
+    """Hertz-Mindlin contact theory"""
+    pr = (3*k_min - 2*mu_min)/(6*k_min + 2*mu_min)  # Poisson's ratio
+    
+    # Effective moduli
+    k_hm = (sigma*(Cn**2*(1-phi)**2*mu_min**2)/(18*np.pi**2*(1-pr)**2))**(1/3)
+    mu_hm = ((2+3*pr)/(5*(2-pr)))*((3*sigma*Cn**2*(1-phi)**2*mu_min**2)/(2*np.pi**2*(1-pr)**2))**(1/3)
+    
+    # Calculate velocities
+    vp_hm = np.sqrt((k_hm + (4/3)*mu_hm)/rho_min)
+    vs_hm = np.sqrt(mu_hm/rho_min)
+    
+    return vp_hm, vs_hm, rho_min
+
+@handle_errors
+def soft_sand_model(vp, vs, rho, phi, phi_c, k_min, mu_min, rho_min, Cn, sigma):
+    """Dvorkin-Nur soft sand model"""
+    # Hertz-Mindlin end member
+    vp_hm, vs_hm, _ = hertz_mindlin(k_min, mu_min, phi_c, Cn, sigma, rho_min)
+    
+    # Modified Hashin-Shtrikman lower bound
+    k_dry = ((phi/phi_c)/(k_hm + (4/3)*mu_hm) + (1 - phi/phi_c)/(k_min + (4/3)*mu_hm))**-1 - (4/3)*mu_hm
+    mu_dry = ((phi/phi_c)/(mu_hm + z) + (1 - phi/phi_c)/(mu_min + z))**-1 - z
+    z = (mu_hm/6)*((9*k_hm + 8*mu_hm)/(k_hm + 2*mu_hm))
+    
+    # Calculate velocities
+    vp_ss = np.sqrt((k_dry + (4/3)*mu_dry)/rho)
+    vs_ss = np.sqrt(mu_dry/rho)
+    
+    return vp_ss, vs_ss, rho
+
+@handle_errors
 def calculate_reflection_coefficients(vp1, vp2, vs1, vs2, rho1, rho2, angle):
     """Calculate P-wave reflection coefficients using Zoeppritz equations approximation"""
     theta = np.radians(angle)
@@ -176,11 +239,9 @@ def ricker_wavelet(frequency, length=0.128, dt=0.001):
 @handle_errors
 def smith_gidlow(vp1, vp2, vs1, vs2, rho1, rho2):
     """Calculate Smith-Gidlow AVO attributes (intercept, gradient)"""
-    # Calculate reflectivities
-    rp = 0.5 * (vp2 - vp1) / (vp2 + vp1) + 0.5 * (rho2 - rho1) / (rho2 + rho1)
-    rs = 0.5 * (vs2 - vs1) / (vs2 + vs1) + 0.5 * (rho2 - rho1) / (rho2 + rho1)
+    rp = 0.5 * (vp2 - vp1)/(vp2 + vp1) + 0.5 * (rho2 - rho1)/(rho2 + rho1)
+    rs = 0.5 * (vs2 - vs1)/(vs2 + vs1) + 0.5 * (rho2 - rho1)/(rho2 + rho1)
     
-    # Smith-Gidlow coefficients
     intercept = rp
     gradient = rp - 2 * rs
     fluid_factor = rp + 1.16 * (vp1/vs1) * rs
@@ -189,7 +250,7 @@ def smith_gidlow(vp1, vp2, vs1, vs2, rho1, rho2):
 
 @handle_errors
 def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot):
-    """Perform comprehensive time-frequency analysis on synthetic gathers"""
+    """Perform time-frequency analysis on synthetic gathers"""
     cases = ['Brine', 'Oil', 'Gas']
     case_data = {
         'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
@@ -197,35 +258,26 @@ def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_
         'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'}
     }
 
-    # Generate synthetic gathers for all cases
     wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
-    t_samp = np.arange(0, 0.5, 0.001)  # Higher resolution for better CWT
+    t_samp = np.arange(0, 0.5, 0.001)
     t_middle = 0.2
     
-    # Store all gathers for time-frequency analysis
     all_gathers = {}
     
     for case in cases:
-        # Get average properties for upper layer (shale)
-        vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
-        vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
-        rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+        vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].mean()
+        vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].mean()
+        rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].mean()
         
-        # Get average properties for middle layer (sand with fluid substitution)
-        vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
-        vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
-        rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+        vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].mean()
+        vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].mean()
+        rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].mean()
         
         syn_gather = []
         for angle in angles:
-            rc = calculate_reflection_coefficients(
-                vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
-            )
-            
+            rc = calculate_reflection_coefficients(vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle)
             rc_series = np.zeros(len(t_samp))
-            idx_middle = np.argmin(np.abs(t_samp - t_middle))
-            rc_series[idx_middle] = rc
-            
+            rc_series[np.argmin(np.abs(t_samp - t_middle))] = rc
             syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
             syn_gather.append(syn_trace)
         
@@ -234,242 +286,125 @@ def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_
     return all_gathers, t_samp
 
 @handle_errors
-def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
-    """Plot frequency domain analysis results"""
-    st.subheader("Frequency Domain Analysis (FFT)")
+def monte_carlo_analysis(logs, params, n_iterations=100):
+    """Perform Monte Carlo uncertainty analysis"""
+    results = []
+    for _ in range(n_iterations):
+        # Perturb input parameters
+        perturbed = {}
+        for param, (mean, std) in params.items():
+            perturbed[param] = np.random.normal(mean, std)
+        
+        # Run rock physics model with perturbed parameters
+        try:
+            result = run_rock_physics_model(logs, perturbed)
+            results.append(result)
+        except:
+            continue
     
-    fig_freq, ax_freq = plt.subplots(1, 3, figsize=(18, 5))
-    
-    for idx, case in enumerate(all_gathers.keys()):
-        syn_gather = all_gathers[case]
-        
-        # Compute FFT for each trace in the gather
-        n = len(t_samp)
-        dt = t_samp[1] - t_samp[0]
-        freqs = np.fft.rfftfreq(n, dt)
-        
-        # Create array to store frequency spectra
-        freq_spectra = np.zeros((len(angles), len(freqs)))
-        
-        for i, trace in enumerate(syn_gather):
-            spectrum = np.abs(np.fft.rfft(trace))
-            freq_spectra[i,:] = spectrum
-        
-        # Normalize spectra for display
-        freq_spectra = freq_spectra / np.max(freq_spectra)
-        
-        # Plot frequency spectra
-        extent = [angles[0], angles[-1], freqs[-1], freqs[0]]
-        im = ax_freq[idx].imshow(freq_spectra, aspect='auto', extent=extent,
-                               cmap='jet', vmin=0, vmax=1)
-        
-        ax_freq[idx].set_title(f"{case} Case Frequency Spectrum")
-        ax_freq[idx].set_xlabel("Angle (degrees)")
-        ax_freq[idx].set_ylabel("Frequency (Hz)")
-        ax_freq[idx].set_ylim(wavelet_freq*3, 0)  # Focus on relevant frequencies
-        
-        plt.colorbar(im, ax=ax_freq[idx], label='Normalized Amplitude')
-    
-    plt.tight_layout()
-    st.pyplot(fig_freq)
+    return pd.DataFrame(results)
 
+# Main processing function
 @handle_errors
-def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq):
-    """Plot Continuous Wavelet Transform analysis results"""
-    st.subheader("Time-Frequency Analysis (CWT)")
-    
-    # Calculate scales for CWT
-    scales = np.arange(cwt_scales[0], cwt_scales[1]+1)
-    
-    fig_cwt, ax_cwt = plt.subplots(3, len(all_gathers), figsize=(18, 12))
-    
-    for col_idx, case in enumerate(all_gathers.keys()):
-        syn_gather = all_gathers[case]
-        
-        # Select a representative trace (middle angle)
-        rep_trace_idx = len(angles) // 2
-        trace = syn_gather[rep_trace_idx]
-        
-        # Perform CWT
-        coefficients, frequencies = pywt.cwt(trace, scales, cwt_wavelet, sampling_period=t_samp[1]-t_samp[0])
-        
-        # Plot time series
-        ax_cwt[0, col_idx].plot(t_samp, trace)
-        ax_cwt[0, col_idx].set_title(f"{case} - Time Series (@ {angles[rep_trace_idx]}°)")
-        ax_cwt[0, col_idx].set_xlabel("Time (s)")
-        ax_cwt[0, col_idx].set_ylabel("Amplitude")
-        ax_cwt[0, col_idx].grid(True)
-        
-        # Plot scalogram
-        extent = [t_samp[0], t_samp[-1], scales[-1], scales[0]]
-        im = ax_cwt[1, col_idx].imshow(np.abs(coefficients), extent=extent,
-                                      cmap='jet', aspect='auto',
-                                      vmax=np.abs(coefficients).max(),
-                                      vmin=-np.abs(coefficients).max())
-        
-        ax_cwt[1, col_idx].set_title(f"{case} - Scalogram")
-        ax_cwt[1, col_idx].set_xlabel("Time (s)")
-        ax_cwt[1, col_idx].set_ylabel("Scale")
-        plt.colorbar(im, ax=ax_cwt[1, col_idx], label='Magnitude')
-        
-        # Plot dominant frequencies
-        dominant_freqs = frequencies[np.argmax(np.abs(coefficients), axis=0)]
-        ax_cwt[2, col_idx].plot(t_samp, dominant_freqs)
-        ax_cwt[2, col_idx].set_title(f"{case} - Dominant Frequency")
-        ax_cwt[2, col_idx].set_xlabel("Time (s)")
-        ax_cwt[2, col_idx].set_ylabel("Frequency (Hz)")
-        ax_cwt[2, col_idx].grid(True)
-        ax_cwt[2, col_idx].set_ylim(0, wavelet_freq*2)
-    
-    plt.tight_layout()
-    st.pyplot(fig_cwt)
-
-@handle_errors
-def plot_angle_time_frequency(all_gathers, t_samp, angles, wavelet_freq):
-    """Plot angle vs time with frequency coloring"""
-    st.subheader("Angle-Time Display with Frequency Coloring")
-    
-    fig_atf, ax_atf = plt.subplots(1, 3, figsize=(18, 6))
-    
-    for idx, case in enumerate(all_gathers.keys()):
-        syn_gather = all_gathers[case]
-        
-        # Compute FFT for each trace to get frequency content
-        n = len(t_samp)
-        dt = t_samp[1] - t_samp[0]
-        freqs = np.fft.rfftfreq(n, dt)
-        
-        # Create array to store dominant frequencies
-        dominant_freqs = np.zeros((len(angles), len(t_samp)))
-        
-        for i, trace in enumerate(syn_gather):
-            # Compute spectrogram for this trace
-            f, t_seg, Sxx = signal.spectrogram(
-                trace, 
-                fs=1/dt,
-                nperseg=min(64, len(trace)//4),
-                noverlap=min(32, len(trace)//8)
-            )
-            
-            # Interpolate spectrogram to match original time axis
-            interp_func = interp2d(t_seg, f, np.log(Sxx+1e-6), kind='linear')
-            Sxx_interp = interp_func(t_samp, freqs)
-            
-            # Find dominant frequency at each time sample
-            for j in range(len(t_samp)):
-                if j < len(t_samp):
-                    if len(freqs) > 0:
-                        dominant_freq_idx = np.argmax(Sxx_interp[:, j])
-                        dominant_freqs[i, j] = freqs[dominant_freq_idx]
-        
-        # Plot angle vs time with frequency coloring
-        extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
-        im = ax_atf[idx].imshow(
-            dominant_freqs.T,
-            aspect='auto',
-            extent=extent,
-            cmap='viridis',
-            vmin=0,
-            vmax=wavelet_freq*2  # Limit to 2x wavelet frequency
+def process_data(logs, params):
+    """Main processing pipeline"""
+    # 1. Run rock physics model
+    if model_choice == "Gassmann's Fluid Substitution":
+        vp_b, vs_b, rho_b = gassmann_fluid_substitution(
+            logs['VP'], logs['VS'], logs['RHO'], logs['PHI'],
+            params['k_min'], params['mu_min'], params['rho_min'],
+            params['k_b'], params['rho_b']
         )
-        
-        ax_atf[idx].set_title(f"{case} Case")
-        ax_atf[idx].set_xlabel("Angle (degrees)")
-        ax_atf[idx].set_ylabel("Time (s)")
-        
-        # Add colorbar
-        plt.colorbar(im, ax=ax_atf[idx], label='Dominant Frequency (Hz)')
+        # Similarly for oil and gas cases...
     
-    plt.tight_layout()
-    st.pyplot(fig_atf)
-
-@handle_errors
-def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
-    """Plot spectral comparison at selected angles"""
-    st.subheader("Spectral Comparison at Selected Angles")
+    # 2. AVO modeling
+    angles = np.arange(params['min_angle'], params['max_angle']+1, params['angle_step'])
+    avo_results = []
+    for angle in angles:
+        rc = calculate_reflection_coefficients(vp1, vp2, vs1, vs2, rho1, rho2, angle)
+        avo_results.append(rc)
     
-    selected_angles = st.multiselect(
-        "Select angles to compare spectra",
-        angles.tolist(),
-        default=[angles[0], angles[len(angles)//2], angles[-1]]
+    # 3. Time-frequency analysis
+    all_gathers, t_samp = perform_time_frequency_analysis(
+        logs, angles, params['wavelet_freq'], 
+        params['cwt_scales'], params['cwt_wavelet'],
+        params['middle_top'], params['middle_bot']
     )
     
-    if selected_angles:
-        fig_compare, ax_compare = plt.subplots(figsize=(10, 6))
-        
-        for case in all_gathers.keys():
-            syn_gather = all_gathers[case]
-            
-            for angle in selected_angles:
-                angle_idx = np.where(angles == angle)[0][0]
-                trace = syn_gather[angle_idx]
-                
-                # FFT
-                spectrum = np.abs(np.fft.rfft(trace))
-                freqs = np.fft.rfftfreq(len(trace), t_samp[1]-t_samp[0])
-                
-                # Normalize spectrum
-                spectrum = spectrum / np.max(spectrum)
-                
-                ax_compare.plot(freqs, spectrum, 
-                               label=f"{case} @ {angle}°",
-                               linestyle='-' if case == 'Brine' else 
-                                       '--' if case == 'Oil' else ':',
-                               color='blue' if case == 'Brine' else
-                                    'green' if case == 'Oil' else 'red')
-        
-        ax_compare.set_title("Normalized Frequency Spectra Comparison")
-        ax_compare.set_xlabel("Frequency (Hz)")
-        ax_compare.set_ylabel("Normalized Amplitude")
-        ax_compare.set_xlim(0, wavelet_freq*3)
-        ax_compare.grid(True)
-        ax_compare.legend()
-        
-        st.pyplot(fig_compare)
+    return {
+        'vp_models': {'Brine': vp_b, 'Oil': vp_o, 'Gas': vp_g},
+        'avo_results': avo_results,
+        'time_freq': all_gathers
+    }
 
-# Main content area
+# Main execution
 if uploaded_file is not None:
     try:
-        # Load and validate data
         logs = pd.read_csv(uploaded_file)
         
-        # Check for required columns
-        required_columns = {'VP', 'VS', 'RHO', 'DEPTH', 
-                          'VP_FRMB', 'VS_FRMB', 'RHO_FRMB',
-                          'VP_FRMO', 'VS_FRMO', 'RHO_FRMO',
-                          'VP_FRMG', 'VS_FRMG', 'RHO_FRMG'}
-        
-        if not required_columns.issubset(logs.columns):
-            missing = required_columns - set(logs.columns)
+        # Validate required columns
+        required_cols = ['DEPTH', 'VP', 'VS', 'RHO', 'PHI']
+        if not all(col in logs.columns for col in required_cols):
+            missing = [col for col in required_cols if col not in logs.columns]
             st.error(f"Missing required columns: {missing}")
             st.stop()
         
-        # Define layer boundaries (example - adjust as needed)
-        middle_top = logs.DEPTH.min() + (logs.DEPTH.max() - logs.DEPTH.min()) * 0.4
-        middle_bot = middle_top + (logs.DEPTH.max() - logs.DEPTH.min()) * 0.2
+        # Prepare parameters
+        params = {
+            'k_min': k_qz,
+            'mu_min': mu_qz,
+            'rho_min': rho_qz,
+            'k_b': k_b, 'rho_b': rho_b,
+            'k_o': k_o, 'rho_o': rho_o,
+            'k_g': k_g, 'rho_g': rho_g,
+            'min_angle': min_angle,
+            'max_angle': max_angle,
+            'angle_step': angle_step,
+            'wavelet_freq': wavelet_freq,
+            'cwt_scales': cwt_scales,
+            'cwt_wavelet': cwt_wavelet,
+            'middle_top': logs.DEPTH.quantile(0.4),
+            'middle_bot': logs.DEPTH.quantile(0.6)
+        }
         
-        # Generate angles for AVO
-        angles = np.arange(min_angle, max_angle + angle_step, angle_step)
+        # Run processing
+        results = process_data(logs, params)
         
-        # Time-Frequency Analysis of Synthetic Gathers
-        st.header("Time-Frequency Analysis of Synthetic Gathers")
+        # Display results
+        st.header("Rock Physics Modeling Results")
+        col1, col2 = st.columns(2)
+        with col1:
+            st.subheader("VP Models")
+            fig_vp, ax = plt.subplots()
+            for case, vp in results['vp_models'].items():
+                ax.plot(vp, logs['DEPTH'], label=case)
+            ax.invert_yaxis()
+            st.pyplot(fig_vp)
         
-        # Generate synthetic gathers for time-frequency analysis
-        all_gathers, t_samp = perform_time_frequency_analysis(
-            logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot
-        )
+        with col2:
+            st.subheader("AVO Response")
+            fig_avo, ax = plt.subplots()
+            ax.plot(angles, results['avo_results'])
+            st.pyplot(fig_avo)
         
-        # Plot angle-time with frequency coloring
-        plot_angle_time_frequency(all_gathers, t_samp, angles, wavelet_freq)
+        # Time-frequency analysis
+        st.header("Time-Frequency Analysis")
+        plot_frequency_analysis(results['time_freq'], t_samp, angles, wavelet_freq)
+        plot_cwt_analysis(results['time_freq'], t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq)
         
-        # Plot frequency domain analysis
-        plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq)
-        
-        # Plot CWT analysis
-        plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq)
-        
-        # Plot spectral comparison
-        plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq)
-
+        # Uncertainty analysis
+        if include_uncertainty:
+            st.header("Uncertainty Analysis")
+            mc_params = {
+                'k_b': (k_b, k_b_std),
+                'rho_b': (rho_b, rho_b_std),
+                'k_o': (k_o, k_o_std),
+                'rho_o': (rho_o, rho_o_std),
+                'k_g': (k_g, k_g_std),
+                'rho_g': (rho_g, rho_g_std)
+            }
+            mc_results = monte_carlo_analysis(logs, mc_params, mc_iterations)
+            st.write(mc_results.describe())
+            
     except Exception as e:
-        st.error(f"An error occurred during processing: {str(e)}")
+        st.error(f"Processing error: {str(e)}")
