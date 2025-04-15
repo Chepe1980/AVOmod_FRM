@@ -601,7 +601,7 @@ def get_table_download_link(df, filename="results.csv"):
     href = f'<a href="data:file/csv;base64,{b64}" download="{filename}">Download CSV File</a>'
     return href
 
-# Time-Frequency Analysis Functions
+# Time-Frequency Analysis Functions (UPDATED AS REQUESTED)
 def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot):
     """Perform comprehensive time-frequency analysis on synthetic gathers"""
     cases = ['Brine', 'Oil', 'Gas']
@@ -647,9 +647,8 @@ def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_
     
     return all_gathers, t_samp
 
-
 def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
-    """Plot frequency domain analysis (FFT) with time on y-axis and frequency on x-axis, color-coded by magnitude"""
+    """Plot frequency domain analysis (FFT) with frequency on x-axis and time on y-axis, color-coded by magnitude"""
     st.subheader("Frequency Domain Analysis (FFT)")
     
     fig_freq, ax_freq = plt.subplots(1, 3, figsize=(18, 5))
@@ -696,7 +695,6 @@ def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     
     plt.tight_layout()
     st.pyplot(fig_freq)
-
 
 def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq):
     """Plot CWT analysis with frequency on x-axis and time on y-axis, color-coded by magnitude"""
@@ -774,10 +772,9 @@ def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wave
         plt.tight_layout()
         st.pyplot(fig_cwt)
         
-        
     except Exception as e:
-        st.error(f"Error in CWT analysis: {str(e)}")        
-    
+        st.error(f"Error in CWT analysis: {str(e)}")
+
 def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
     """Plot spectral comparison at selected angles with frequency on x-axis and amplitude on y-axis"""
     st.subheader("Spectral Comparison at Selected Angles")
@@ -821,13 +818,6 @@ def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
         ax_compare.legend()
         
         st.pyplot(fig_compare)
-
-
-
-
-
-
-
 
 # Main content area
 if uploaded_file is not None:
