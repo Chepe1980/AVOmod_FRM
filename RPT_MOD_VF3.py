@@ -147,16 +147,33 @@ def handle_errors(func):
             st.stop()
     return wrapper
 
-# [Previous rock physics model functions remain the same...]
+@handle_errors
+def calculate_reflection_coefficients(vp1, vp2, vs1, vs2, rho1, rho2, angle):
+    """Calculate P-wave reflection coefficients using Zoeppritz equations approximation"""
+    theta = np.radians(angle)
+    vp_avg = (vp1 + vp2)/2
+    vs_avg = (vs1 + vs2)/2
+    rho_avg = (rho1 + rho2)/2
+    
+    dvp = vp2 - vp1
+    dvs = vs2 - vs1
+    drho = rho2 - rho1
+    
+    # Aki-Richards approximation
+    rc = (0.5*(dvp/vp_avg + drho/rho_avg) + 
+          0.5*(dvp/vp_avg - 4*(vs_avg**2/vp_avg**2)*(dvs/vs_avg + drho/rho_avg))*np.sin(theta)**2 + 
+          0.5*(dvp/vp_avg)*np.tan(theta)**2*np.sin(theta)**2)
+    
+    return rc
 
-# Wavelet function
+@handle_errors
 def ricker_wavelet(frequency, length=0.128, dt=0.001):
     """Generate a Ricker wavelet"""
     t = np.linspace(-length/2, length/2, int(length/dt))
     y = (1 - 2*(np.pi**2)*(frequency**2)*(t**2)) * np.exp(-(np.pi**2)*(frequency**2)*(t**2))
     return t, y
 
-# Smith-Gidlow AVO approximation
+@handle_errors
 def smith_gidlow(vp1, vp2, vs1, vs2, rho1, rho2):
     """Calculate Smith-Gidlow AVO attributes (intercept, gradient)"""
     # Calculate reflectivities
@@ -170,8 +187,7 @@ def smith_gidlow(vp1, vp2, vs1, vs2, rho1, rho2):
     
     return intercept, gradient, fluid_factor
 
-# [Previous processing functions remain the same until the AVO modeling section...]
-
+@handle_errors
 def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot):
     """Perform comprehensive time-frequency analysis on synthetic gathers"""
     cases = ['Brine', 'Oil', 'Gas']
@@ -217,6 +233,7 @@ def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_
     
     return all_gathers, t_samp
 
+@handle_errors
 def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     """Plot frequency domain analysis results"""
     st.subheader("Frequency Domain Analysis (FFT)")
@@ -256,6 +273,7 @@ def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     plt.tight_layout()
     st.pyplot(fig_freq)
 
+@handle_errors
 def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq):
     """Plot Continuous Wavelet Transform analysis results"""
     st.subheader("Time-Frequency Analysis (CWT)")
@@ -306,6 +324,7 @@ def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wave
     plt.tight_layout()
     st.pyplot(fig_cwt)
 
+@handle_errors
 def plot_angle_time_frequency(all_gathers, t_samp, angles, wavelet_freq):
     """Plot angle vs time with frequency coloring"""
     st.subheader("Angle-Time Display with Frequency Coloring")
@@ -364,6 +383,7 @@ def plot_angle_time_frequency(all_gathers, t_samp, angles, wavelet_freq):
     plt.tight_layout()
     st.pyplot(fig_atf)
 
+@handle_errors
 def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
     """Plot spectral comparison at selected angles"""
     st.subheader("Spectral Comparison at Selected Angles")
@@ -407,13 +427,30 @@ def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq):
         
         st.pyplot(fig_compare)
 
-# [Rest of your existing code continues...]
-
 # Main content area
 if uploaded_file is not None:
     try:
-        # [Previous processing code remains the same until after AVO modeling...]
-
+        # Load and validate data
+        logs = pd.read_csv(uploaded_file)
+        
+        # Check for required columns
+        required_columns = {'VP', 'VS', 'RHO', 'DEPTH', 
+                          'VP_FRMB', 'VS_FRMB', 'RHO_FRMB',
+                          'VP_FRMO', 'VS_FRMO', 'RHO_FRMO',
+                          'VP_FRMG', 'VS_FRMG', 'RHO_FRMG'}
+        
+        if not required_columns.issubset(logs.columns):
+            missing = required_columns - set(logs.columns)
+            st.error(f"Missing required columns: {missing}")
+            st.stop()
+        
+        # Define layer boundaries (example - adjust as needed)
+        middle_top = logs.DEPTH.min() + (logs.DEPTH.max() - logs.DEPTH.min()) * 0.4
+        middle_bot = middle_top + (logs.DEPTH.max() - logs.DEPTH.min()) * 0.2
+        
+        # Generate angles for AVO
+        angles = np.arange(min_angle, max_angle + angle_step, angle_step)
+        
         # Time-Frequency Analysis of Synthetic Gathers
         st.header("Time-Frequency Analysis of Synthetic Gathers")
         
@@ -434,7 +471,5 @@ if uploaded_file is not None:
         # Plot spectral comparison
         plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq)
 
-        # [Rest of your existing code continues...]
-    
     except Exception as e:
         st.error(f"An error occurred during processing: {str(e)}")
