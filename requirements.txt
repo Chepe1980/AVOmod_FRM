@@ -7,4 +7,5 @@ streamlit-bokeh-events
 scipy
 rockphypy
 PyWavelets
+bokeh >=2.4.3
 
