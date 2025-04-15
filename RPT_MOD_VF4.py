@@ -647,6 +647,7 @@ def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_
     
     return all_gathers, t_samp
 
+
 def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     """Plot frequency domain analysis (FFT) with frequency on x-axis and time on y-axis, color-coded by magnitude"""
     st.subheader("Frequency Domain Analysis (FFT)")
@@ -654,24 +655,35 @@ def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     fig_freq, ax_freq = plt.subplots(1, 3, figsize=(18, 5))
     
     for idx, case in enumerate(all_gathers.keys()):
-        syn_gather = all_gathers[case]
+        syn_gather = all_gathers[case]  # Shape: (num_angles, num_time_samples)
         
-        # Compute FFT for each time sample across angles
+        # Compute FFT parameters
         n = syn_gather.shape[1]  # Number of time samples
         dt = t_samp[1] - t_samp[0]
-        freqs = np.fft.rfftfreq(n, dt)
+        freqs = np.fft.rfftfreq(n, dt)  # Frequency bins
         
         # Initialize array to store frequency spectra (time vs frequency)
         freq_spectra = np.zeros((len(t_samp), len(freqs)))
         
+        # Calculate FFT for each time sample across all angles
         for i in range(len(t_samp)):
             # Get amplitude across all angles at this time sample
             time_slice = syn_gather[:, i]
-            spectrum = np.abs(np.fft.rfft(time_slice))
-            freq_spectra[i, :] = spectrum
+            
+            # Apply Hanning window to reduce spectral leakage
+            window = np.hanning(len(time_slice))
+            windowed_signal = time_slice * window
+            
+            # Compute FFT and take magnitude
+            spectrum = np.abs(np.fft.rfft(windowed_signal))
+            
+            # Handle case where spectrum length doesn't match frequency bins
+            min_len = min(len(spectrum), len(freqs))
+            freq_spectra[i, :min_len] = spectrum[:min_len]
         
         # Normalize for better visualization
-        freq_spectra = freq_spectra / np.max(freq_spectra)
+        if np.max(freq_spectra) > 0:
+            freq_spectra = freq_spectra / np.max(freq_spectra)
         
         # Plot with frequency on x-axis and time on y-axis
         extent = [freqs[0], freqs[-1], t_samp[-1], t_samp[0]]  # Inverted time for seismic display
@@ -695,6 +707,8 @@ def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq):
     
     plt.tight_layout()
     st.pyplot(fig_freq)
+
+
 
 def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq):
     """Plot CWT analysis with frequency on x-axis and time on y-axis, color-coded by magnitude"""
