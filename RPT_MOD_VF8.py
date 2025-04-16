@@ -1330,7 +1330,7 @@ if uploaded_file is not None:
             sw = np.linspace(0, 1, 5)              # Water saturation
             
             # Function to generate and display RPT plot with Gassmann points
-def plot_rpt_with_gassmann(title, fluid='gas'):
+            def plot_rpt_with_gassmann(title, fluid='gas'):
     plt.figure(figsize=(8, 6))
     
     # Generate RPT background
@@ -1414,8 +1414,6 @@ def plot_rpt_with_gassmann(title, fluid='gas'):
     buf.seek(0)
     st.image(buf, use_column_width=True)
     plt.close()
-            
-
             
             # Display Gas Case RPT with Gassmann points
             st.subheader("Gas Case RPT with Gassmann Fluid Substitution")
@@ -1669,3 +1667,4 @@ def plot_rpt_with_gassmann(title, fluid='gas'):
     
     except Exception as e:
         st.error(f"An error occurred during processing: {str(e)}")
+
