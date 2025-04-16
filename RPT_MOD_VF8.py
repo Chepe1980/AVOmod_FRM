@@ -30,7 +30,7 @@ st.set_page_config(layout="wide", page_title="Enhanced Rock Physics & AVO Modeli
 st.title("Enhanced Rock Physics & AVO Modeling Tool")
 st.markdown("""
 This app performs advanced rock physics modeling and AVO analysis with multiple models, visualization options, 
-and uncertainty analysis. Adjust fluid saturations interactively to see their impact on rock properties.
+and uncertainty analysis.
 """)
 
 # Available colormaps for seismic displays
@@ -85,37 +85,41 @@ with st.sidebar:
         rpt_Cn = st.slider("RPT Coordination Number", 6.0, 12.0, 8.6, 0.1)
         rpt_sigma = st.slider("RPT Effective Stress (MPa)", 1, 50, 20)
     
-    # Fluid properties with interactive saturation sliders
+    # Fluid properties with uncertainty ranges
     st.subheader("Fluid Properties")
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown("**Brine**")
         rho_b = st.number_input("Brine Density (g/cc)", value=1.09, step=0.01)
         k_b = st.number_input("Brine Bulk Modulus (GPa)", value=2.8, step=0.1)
-        sw = st.slider("Water Saturation (Sw)", 0.0, 1.0, 0.8, 0.01)
+        rho_b_std = st.number_input("Brine Density Std Dev", value=0.05, step=0.01, min_value=0.0)
+        k_b_std = st.number_input("Brine Bulk Modulus Std Dev", value=0.1, step=0.01, min_value=0.0)
     with col2:
         st.markdown("**Oil**")
         rho_o = st.number_input("Oil Density (g/cc)", value=0.78, step=0.01)
         k_o = st.number_input("Oil Bulk Modulus (GPa)", value=0.94, step=0.1)
-        so = st.slider("Oil Saturation (So)", 0.0, 1.0, 0.15, 0.01)
+        rho_o_std = st.number_input("Oil Density Std Dev", value=0.05, step=0.01, min_value=0.0)
+        k_o_std = st.number_input("Oil Bulk Modulus Std Dev", value=0.05, step=0.01, min_value=0.0)
     with col3:
         st.markdown("**Gas**")
         rho_g = st.number_input("Gas Density (g/cc)", value=0.25, step=0.01)
         k_g = st.number_input("Gas Bulk Modulus (GPa)", value=0.06, step=0.01)
-        sg = st.slider("Gas Saturation (Sg)", 0.0, 1.0, 0.05, 0.01)
+        rho_g_std = st.number_input("Gas Density Std Dev", value=0.02, step=0.01, min_value=0.0)
+        k_g_std = st.number_input("Gas Bulk Modulus Std Dev", value=0.01, step=0.01, min_value=0.0)
     
-    # Normalize saturations to sum to 1
-    total_sat = sw + so + sg
-    if total_sat > 0:
-        sw_norm = sw / total_sat
-        so_norm = so / total_sat
-        sg_norm = sg / total_sat
-    else:
-        sw_norm, so_norm, sg_norm = 0, 0, 0
+    # Saturation controls
+    st.subheader("Saturation Settings")
+    sw_default = 0.8
+    so_default = 0.15
+    sg_default = 0.05
     
-    # Calculate mixed fluid properties using Wood's equation
-    rho_fl = sw_norm * rho_b + so_norm * rho_o + sg_norm * rho_g
-    k_fl = 1 / (sw_norm/k_b + so_norm/k_o + sg_norm/k_g) if (sw_norm + so_norm + sg_norm) > 0 else 0
+    sw = st.slider("Water Saturation (Sw)", 0.0, 1.0, sw_default, 0.01)
+    remaining = 1.0 - sw
+    so = st.slider("Oil Saturation (So)", 0.0, remaining, min(so_default, remaining), 0.01)
+    sg = remaining - so
+    
+    # Display actual saturations (in case adjustments were made)
+    st.write(f"Current saturations: Sw={sw:.2f}, So={so:.2f}, Sg={sg:.2f}")
     
     # AVO modeling parameters
     st.subheader("AVO Modeling Parameters")
@@ -369,12 +373,12 @@ def create_interactive_crossplot(logs):
     """Create interactive Bokeh crossplot with proper error handling"""
     try:
         # Define litho-fluid class labels
-        lfc_labels = ['Undefined', 'Brine', 'Oil', 'Gas', 'Shale']
+        lfc_labels = ['Undefined', 'Brine', 'Oil', 'Gas', 'Mixed', 'Shale']
         
         # Handle NaN values and ensure integers
         if 'LFC_B' not in logs.columns:
             logs['LFC_B'] = 0
-        logs['LFC_B'] = logs['LFC_B'].fillna(0).clip(0, 4).astype(int)
+        logs['LFC_B'] = logs['LFC_B'].fillna(0).clip(0, 5).astype(int)
         
         # Create labels - handle any unexpected values gracefully
         logs['LFC_Label'] = logs['LFC_B'].apply(
@@ -452,10 +456,15 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
         missing = required_columns - set(logs.columns)
         raise ValueError(f"Missing required columns: {missing}")
     
+    # Get saturations from kwargs
+    sw = kwargs.get('sw', 0.8)
+    so = kwargs.get('so', 0.15)
+    sg = kwargs.get('sg', 0.05)
+    
     # Skip fluid substitution for RPT models (they're visualization-only)
     if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
         # Just add placeholder columns for consistency
-        for case in ['B', 'O', 'G']:
+        for case in ['B', 'O', 'G', 'MIX']:
             logs[f'VP_FRM{case}'] = logs.VP
             logs[f'VS_FRM{case}'] = logs.VS
             logs[f'RHO_FRM{case}'] = logs.RHO
@@ -479,9 +488,6 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
     rho_g = kwargs.get('rho_g', 0.25)
     k_g = kwargs.get('k_g', 0.06)
     sand_cutoff = kwargs.get('sand_cutoff', 0.12)
-    sw_norm = kwargs.get('sw_norm', 0.8)
-    so_norm = kwargs.get('so_norm', 0.15)
-    sg_norm = kwargs.get('sg_norm', 0.05)
     
     # VRH function
     def vrh(volumes, k, mu):
@@ -504,10 +510,15 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
     sandN = sand/(shale+sand)
     k_u, k_l, mu_u, mu_l, k0, mu0 = vrh([shaleN, sandN], [k_sh, k_qz], [mu_sh, mu_qz])
 
-    # Calculate mixed fluid properties using interactive saturations
-    rho_fl = sw_norm * rho_b + so_norm * rho_o + sg_norm * rho_g
-    k_fl = 1 / (sw_norm/k_b + so_norm/k_o + sg_norm/k_g) if (sw_norm + so_norm + sg_norm) > 0 else 0
-
+    # Fluid mixtures (using slider values)
+    water = sw
+    oil = so
+    gas = sg
+    
+    # Effective fluid properties (weighted average)
+    rho_fl = water*rho_b + oil*rho_o + gas*rho_g
+    k_fl = 1.0 / (water/k_b + oil/k_o + gas/k_g)  # Reuss average for fluid mixture
+    
     # Select model function and prepare arguments
     if model_choice == "Gassmann's Fluid Substitution":
         def model_func(rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi):
@@ -527,53 +538,78 @@ def process_data(uploaded_file, model_choice, include_uncertainty=False, mc_iter
 
     # Apply selected model with all required parameters
     if model_choice == "Gassmann's Fluid Substitution":
-        vp2, vs2, rho2, k2 = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI)
+        # Brine case (100% brine)
+        vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI)
+        
+        # Oil case (100% oil)
+        vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI)
+        
+        # Gas case (100% gas)
+        vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI)
+        
+        # Mixed case (using slider saturations)
+        vp_mix, vs_mix, rho_mix, k_mix = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI)
     elif model_choice == "Critical Porosity Model (Nur)":
         critical_porosity = kwargs.get('critical_porosity', 0.4)
-        vp2, vs2, rho2, k2 = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, critical_porosity)
+        vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, critical_porosity)
+        vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, critical_porosity)
+        vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, critical_porosity)
+        vp_mix, vs_mix, rho_mix, k_mix = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, critical_porosity)
     elif model_choice == "Contact Theory (Hertz-Mindlin)":
         coordination_number = kwargs.get('coordination_number', 9)
         effective_pressure = kwargs.get('effective_pressure', 10)
-        vp2, vs2, rho2, k2 = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, coordination_number, effective_pressure)
+        vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, coordination_number, effective_pressure)
+        vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, coordination_number, effective_pressure)
+        vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, coordination_number, effective_pressure)
+        vp_mix, vs_mix, rho_mix, k_mix = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, coordination_number, effective_pressure)
     elif model_choice == "Dvorkin-Nur Soft Sand Model":
         coordination_number = kwargs.get('coordination_number', 9)
         effective_pressure = kwargs.get('effective_pressure', 10)
         critical_porosity = kwargs.get('critical_porosity', 0.4)
-        vp2, vs2, rho2, k2 = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
+        vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
+        vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
+        vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
+        vp_mix, vs_mix, rho_mix, k_mix = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI, coordination_number, effective_pressure, critical_porosity)
     elif model_choice == "Raymer-Hunt-Gardner Model":
-        vp2, vs2, rho2, k2 = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI)
+        vpb, vsb, rhob, kb = model_func(rho_b, k_b, rho_b, k_b, k0, mu0, logs.PHI)
+        vpo, vso, rhoo, ko = model_func(rho_b, k_b, rho_o, k_o, k0, mu0, logs.PHI)
+        vpg, vsg, rhog, kg = model_func(rho_b, k_b, rho_g, k_g, k0, mu0, logs.PHI)
+        vp_mix, vs_mix, rho_mix, _ = model_func(rho_b, k_b, rho_fl, k_fl, k0, mu0, logs.PHI)
 
     # Litho-fluid classification
     brine_sand = ((logs.VSH <= sand_cutoff) & (logs.SW >= 0.65))
-    oil_sand = ((logs.VSH <= sand_cutoff) & (logs.SW < 0.65))
+    oil_sand = ((logs.VSH <= sand_cutoff) & (logs.SW < 0.65) & (logs.SW >= 0.35))
+    gas_sand = ((logs.VSH <= sand_cutoff) & (logs.SW < 0.35))
     shale_flag = (logs.VSH > sand_cutoff)
 
     # Add results to logs
-    logs['VP_FRM'] = logs.VP
-    logs['VS_FRM'] = logs.VS
-    logs['RHO_FRM'] = logs.RHO
-    logs['VP_FRM'][brine_sand|oil_sand] = vp2[brine_sand|oil_sand]
-    logs['VS_FRM'][brine_sand|oil_sand] = vs2[brine_sand|oil_sand]
-    logs['RHO_FRM'][brine_sand|oil_sand] = rho2[brine_sand|oil_sand]
-    logs['IP_FRM'] = logs['VP_FRM']*logs['RHO_FRM']
-    logs['IS_FRM'] = logs['VS_FRM']*logs['RHO_FRM']
-    logs['VPVS_FRM'] = logs['VP_FRM']/logs['VS_FRM']
+    for case, vp, vs, rho in [('B', vpb, vsb, rhob), ('O', vpo, vso, rhoo), ('G', vpg, vsg, rhog), ('MIX', vp_mix, vs_mix, rho_mix)]:
+        logs[f'VP_FRM{case}'] = logs.VP
+        logs[f'VS_FRM{case}'] = logs.VS
+        logs[f'RHO_FRM{case}'] = logs.RHO
+        logs[f'VP_FRM{case}'][brine_sand|oil_sand|gas_sand] = vp[brine_sand|oil_sand|gas_sand]
+        logs[f'VS_FRM{case}'][brine_sand|oil_sand|gas_sand] = vs[brine_sand|oil_sand|gas_sand]
+        logs[f'RHO_FRM{case}'][brine_sand|oil_sand|gas_sand] = rho[brine_sand|oil_sand|gas_sand]
+        logs[f'IP_FRM{case}'] = logs[f'VP_FRM{case}']*logs[f'RHO_FRM{case}']
+        logs[f'IS_FRM{case}'] = logs[f'VS_FRM{case}']*logs[f'RHO_FRM{case}']
+        logs[f'VPVS_FRM{case}'] = logs[f'VP_FRM{case}']/logs[f'VS_FRM{case}']
 
-    # LFC flags
-    temp_lfc = np.zeros(np.shape(logs.VSH))
-    temp_lfc[brine_sand.values | oil_sand.values] = 1  # Brine
-    temp_lfc[shale_flag.values] = 4  # Shale
-    logs['LFC'] = temp_lfc
+    # LFC flags (1=Brine, 2=Oil, 3=Gas, 4=Mixed, 5=Shale)
+    for case, val in [('B', 1), ('O', 2), ('G', 3), ('MIX', 4)]:
+        temp_lfc = np.zeros(np.shape(logs.VSH))
+        temp_lfc[brine_sand.values | oil_sand.values | gas_sand.values] = val
+        temp_lfc[shale_flag.values] = 5  # Shale
+        logs[f'LFC_{case}'] = temp_lfc
 
     # Uncertainty analysis if enabled
     mc_results = None
     if include_uncertainty:
         # Define parameter distributions
         params = {
-            'rho_f1': (rho_b, 0.05),
-            'k_f1': (k_b, 0.1),
-            'rho_f2': (rho_fl, 0.05),
-            'k_f2': (k_fl, 0.1),
+            'rho_f1': (rho_b, rho_b_std),
+            'k_f1': (k_b, k_b_std),
+            'rho_f2': (rho_fl, np.sqrt((sw*rho_b_std)**2 + (so*rho_o_std)**2 + (sg*rho_g_std)**2)),
+            'k_f2': (k_fl, np.sqrt((sw*k_b_std)**2 + (so*k_o_std)**2 + (sg*k_g_std)**2)),
             'k0': (k0.mean(), 0.1 * k0.mean()),  # 10% uncertainty in mineral moduli
             'mu0': (mu0.mean(), 0.1 * mu0.mean()),
             'phi': (logs.PHI.mean(), 0.05)  # 5% porosity uncertainty
@@ -601,99 +637,117 @@ def get_table_download_link(df, filename="results.csv"):
     return href
 
 # Enhanced Time-Frequency Analysis Functions
-def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot):
+def perform_time_frequency_analysis(logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot, sw, so, sg):
     """Perform comprehensive time-frequency analysis on synthetic gathers"""
+    cases = ['Brine', 'Oil', 'Gas', 'Mixed']
+    case_data = {
+        'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
+        'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'g'},
+        'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'},
+        'Mixed': {'vp': 'VP_FRMMIX', 'vs': 'VS_FRMMIX', 'rho': 'RHO_FRMMIX', 'color': 'm'}
+    }
+
     # Generate synthetic gathers for all cases
     wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
     t_samp = np.arange(0, 0.5, 0.001)  # Higher resolution for better CWT
     t_middle = 0.2
     
-    # Get average properties for upper layer (shale)
-    vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
-    vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
-    rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+    # Store all gathers for time-frequency analysis
+    all_gathers = {}
     
-    # Get average properties for middle layer (sand with fluid substitution)
-    vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'VP_FRM'].values.mean()
-    vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'VS_FRM'].values.mean()
-    rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'RHO_FRM'].values.mean()
-    
-    syn_gather = []
-    for angle in angles:
-        rc = calculate_reflection_coefficients(
-            vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
-        )
+    for case in cases:
+        # Get average properties for upper layer (shale)
+        vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+        vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+        rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
         
-        rc_series = np.zeros(len(t_samp))
-        idx_middle = np.argmin(np.abs(t_samp - t_middle))
-        rc_series[idx_middle] = rc
+        # Get average properties for middle layer (sand with fluid substitution)
+        vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+        vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+        rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
         
-        syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
-        syn_gather.append(syn_trace)
+        syn_gather = []
+        for angle in angles:
+            rc = calculate_reflection_coefficients(
+                vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+            )
+            
+            rc_series = np.zeros(len(t_samp))
+            idx_middle = np.argmin(np.abs(t_samp - t_middle))
+            rc_series[idx_middle] = rc
+            
+            syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+            syn_gather.append(syn_trace)
+        
+        all_gathers[case] = np.array(syn_gather)
     
-    return np.array(syn_gather), t_samp
+    return all_gathers, t_samp
 
-def plot_frequency_analysis(syn_gather, t_samp, angles, wavelet_freq, time_range, freq_range):
+def plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq, time_range, freq_range):
     """Plot frequency domain analysis (FFT) with frequency-based color coding"""
     st.subheader("Frequency Domain Analysis (FFT)")
     
-    fig_freq, ax_freq = plt.subplots(figsize=(10, 5))
+    fig_freq, ax_freq = plt.subplots(1, 4, figsize=(24, 5))  # Added column for mixed case
     
-    # Time range filtering
-    time_mask = (t_samp >= time_range[0]) & (t_samp <= time_range[1])
-    t_samp_filtered = t_samp[time_mask]
-    
-    # Compute FFT parameters
-    n = syn_gather.shape[1]  # Number of time samples
-    dt = t_samp[1] - t_samp[0]
-    freqs = np.fft.rfftfreq(n, dt)  # Frequency bins
-    
-    # Initialize array to store frequency spectra (time vs frequency)
-    freq_spectra = np.zeros((len(t_samp_filtered), len(freqs)))
-    
-    # Calculate FFT for each time sample across all angles
-    for i, t in enumerate(t_samp_filtered):
-        time_idx = np.where(t_samp == t)[0][0]
-        time_slice = syn_gather[:, time_idx]
+    for idx, case in enumerate(all_gathers.keys()):
+        syn_gather = all_gathers[case]  # Shape: (num_angles, num_time_samples)
         
-        # Apply Hanning window to reduce spectral leakage
-        window = np.hanning(len(time_slice))
-        windowed_signal = time_slice * window
+        # Time range filtering
+        time_mask = (t_samp >= time_range[0]) & (t_samp <= time_range[1])
+        t_samp_filtered = t_samp[time_mask]
         
-        # Compute FFT and take magnitude
-        spectrum = np.abs(np.fft.rfft(windowed_signal))
+        # Compute FFT parameters
+        n = syn_gather.shape[1]  # Number of time samples
+        dt = t_samp[1] - t_samp[0]
+        freqs = np.fft.rfftfreq(n, dt)  # Frequency bins
         
-        # Handle case where spectrum length doesn't match frequency bins
-        min_len = min(len(spectrum), len(freqs))
-        freq_spectra[i, :min_len] = spectrum[:min_len]
+        # Initialize array to store frequency spectra (time vs frequency)
+        freq_spectra = np.zeros((len(t_samp_filtered), len(freqs)))
+        
+        # Calculate FFT for each time sample across all angles
+        for i, t in enumerate(t_samp_filtered):
+            time_idx = np.where(t_samp == t)[0][0]
+            time_slice = syn_gather[:, time_idx]
+            
+            # Apply Hanning window to reduce spectral leakage
+            window = np.hanning(len(time_slice))
+            windowed_signal = time_slice * window
+            
+            # Compute FFT and take magnitude
+            spectrum = np.abs(np.fft.rfft(windowed_signal))
+            
+            # Handle case where spectrum length doesn't match frequency bins
+            min_len = min(len(spectrum), len(freqs))
+            freq_spectra[i, :min_len] = spectrum[:min_len]
+        
+        # Normalize for better visualization
+        if np.max(freq_spectra) > 0:
+            freq_spectra = freq_spectra / np.max(freq_spectra)
+        
+        # Create frequency-based color coding
+        X, Y = np.meshgrid(freqs, t_samp_filtered)
+        
+        # Plot with frequency-based color
+        im = ax_freq[idx].pcolormesh(
+            X, Y, freq_spectra,
+            cmap='jet',
+            shading='auto',
+            vmin=0,
+            vmax=1
+        )
+        
+        ax_freq[idx].set_title(f"{case} Case Frequency Spectrum")
+        ax_freq[idx].set_xlabel("Frequency (Hz)")
+        ax_freq[idx].set_ylabel("Time (s)")
+        ax_freq[idx].set_ylim(time_range[1], time_range[0])  # Inverted for seismic display
+        ax_freq[idx].set_xlim(freq_range[0], freq_range[1])  # Focus on relevant frequencies
+        
+        plt.colorbar(im, ax=ax_freq[idx], label='Normalized Amplitude')
     
-    # Normalize for better visualization
-    if np.max(freq_spectra) > 0:
-        freq_spectra = freq_spectra / np.max(freq_spectra)
-    
-    # Create frequency-based color coding
-    X, Y = np.meshgrid(freqs, t_samp_filtered)
-    
-    # Plot with frequency-based color
-    im = ax_freq.pcolormesh(
-        X, Y, freq_spectra,
-        cmap='jet',
-        shading='auto',
-        vmin=0,
-        vmax=1
-    )
-    
-    ax_freq.set_title("Frequency Spectrum")
-    ax_freq.set_xlabel("Frequency (Hz)")
-    ax_freq.set_ylabel("Time (s)")
-    ax_freq.set_ylim(time_range[1], time_range[0])  # Inverted for seismic display
-    ax_freq.set_xlim(freq_range[0], freq_range[1])  # Focus on relevant frequencies
-    
-    plt.colorbar(im, ax=ax_freq, label='Normalized Amplitude')
     plt.tight_layout()
     st.pyplot(fig_freq)
 
-def plot_cwt_analysis(syn_gather, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range):
+def plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range):
     """Plot CWT analysis with frequency-based color coding and extract 0.20s data"""
     st.subheader("Time-Frequency Analysis (CWT)")
     
@@ -702,92 +756,111 @@ def plot_cwt_analysis(syn_gather, t_samp, angles, cwt_scales, cwt_wavelet, wavel
         # Convert scales to approximate frequencies
         freqs = pywt.scale2frequency(cwt_wavelet, scales) / (t_samp[1]-t_samp[0])
         
-        fig_cwt, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
+        fig_cwt, ax_cwt = plt.subplots(3, len(all_gathers), figsize=(24, 12))  # Adjusted for 4 cases
         
         # Time range filtering
         time_mask = (t_samp >= time_range[0]) & (t_samp <= time_range[1])
         t_samp_filtered = t_samp[time_mask]
         
-        # Initialize array to store CWT magnitudes (time vs frequency)
-        cwt_magnitudes = np.zeros((len(t_samp_filtered), len(freqs)))
+        # Store CWT magnitudes at t=0.20s for each case (using raw magnitudes)
+        cwt_at_020s = {'Case': [], 'Frequency': [], 'Magnitude': []}
         
-        for i, t in enumerate(t_samp_filtered):
-            time_idx = np.where(t_samp == t)[0][0]
-            trace = syn_gather[:, time_idx]  # All angles at this time sample
-            if len(trace) == 0:
+        for col_idx, case in enumerate(all_gathers.keys()):
+            syn_gather = all_gathers[case]
+            
+            # Initialize array to store CWT magnitudes (time vs frequency)
+            cwt_magnitudes = np.zeros((len(t_samp_filtered), len(freqs)))
+            
+            for i, t in enumerate(t_samp_filtered):
+                time_idx = np.where(t_samp == t)[0][0]
+                trace = syn_gather[:, time_idx]  # All angles at this time sample
+                if len(trace) == 0:
+                    continue
+                    
+                coefficients, _ = pywt.cwt(trace, scales, cwt_wavelet, 
+                                         sampling_period=t_samp[1]-t_samp[0])
+                
+                if coefficients.size > 0:
+                    # Sum across angles for each scale (store raw magnitudes)
+                    cwt_magnitudes[i, :] = np.sum(np.abs(coefficients), axis=1)
+            
+            if cwt_magnitudes.size == 0:
+                st.warning(f"No valid CWT data for {case} case")
                 continue
                 
-            coefficients, _ = pywt.cwt(trace, scales, cwt_wavelet, 
-                                     sampling_period=t_samp[1]-t_samp[0])
+            # Find global max for consistent normalization in display (not used in exported data)
+            global_max = np.max(cwt_magnitudes) if np.max(cwt_magnitudes) > 0 else 1
             
-            if coefficients.size > 0:
-                # Sum across angles for each scale (store raw magnitudes)
-                cwt_magnitudes[i, :] = np.sum(np.abs(coefficients), axis=1)
-        
-        if cwt_magnitudes.size == 0:
-            st.warning("No valid CWT data available")
-            return None
+            # Create frequency-based color coding
+            X, Y = np.meshgrid(freqs, t_samp_filtered)
             
-        # Find global max for consistent normalization in display (not used in exported data)
-        global_max = np.max(cwt_magnitudes) if np.max(cwt_magnitudes) > 0 else 1
-        
-        # Create frequency-based color coding
-        X, Y = np.meshgrid(freqs, t_samp_filtered)
-        
-        # Plot CWT magnitude with frequency-based color (inverted y-axis)
-        im = ax1.pcolormesh(
-            X, Y, cwt_magnitudes/global_max,  # Normalized only for display
-            shading='auto',
-            cmap='jet', 
-            vmin=0, 
-            vmax=1
-        )
-        ax1.set_title("CWT Magnitude")
-        ax1.set_xlabel("Frequency (Hz)")
-        ax1.set_ylabel("Time (s)")
-        ax1.set_ylim(time_range[1], time_range[0])  # Inverted y-axis
-        ax1.set_xlim(freq_range[0], freq_range[1])
-        plt.colorbar(im, ax=ax1, label='Normalized Magnitude')
-        
-        # Plot time series at middle angle (inverted y-axis)
-        mid_angle_idx = len(angles) // 2
-        time_series = syn_gather[mid_angle_idx, time_mask]
-        ax2.plot(t_samp_filtered, time_series, 'k-')
-        ax2.set_title(f"Time Series (@ {angles[mid_angle_idx]}°)")
-        ax2.set_xlabel("Time (s)")
-        ax2.set_ylabel("Amplitude")
-        ax2.grid(True)
-        ax2.set_xlim(time_range[0], time_range[1])
-        ax2.set_ylim(time_range[1], time_range[0])  # Inverted y-axis
-        
-        # Plot dominant frequency (inverted y-axis)
-        if cwt_magnitudes.size > 0:
-            max_freq_indices = np.argmax(cwt_magnitudes, axis=1)
-            dominant_freqs = freqs[max_freq_indices]
+            # Plot CWT magnitude with frequency-based color (inverted y-axis)
+            im = ax_cwt[0, col_idx].pcolormesh(
+                X, Y, cwt_magnitudes/global_max,  # Normalized only for display
+                shading='auto',
+                cmap='jet', 
+                vmin=0, 
+                vmax=1
+            )
+            ax_cwt[0, col_idx].set_title(f"{case} - CWT Magnitude")
+            ax_cwt[0, col_idx].set_xlabel("Frequency (Hz)")
+            ax_cwt[0, col_idx].set_ylabel("Time (s)")
+            ax_cwt[0, col_idx].set_ylim(time_range[1], time_range[0])  # Inverted y-axis
+            ax_cwt[0, col_idx].set_xlim(freq_range[0], freq_range[1])
+            plt.colorbar(im, ax=ax_cwt[0, col_idx], label='Normalized Magnitude')
             
-            ax3.plot(t_samp_filtered, dominant_freqs, 'r-')
-            ax3.set_title("Dominant Frequency")
-            ax3.set_xlabel("Time (s)")
-            ax3.set_ylabel("Frequency (Hz)")
-            ax3.grid(True)
-            ax3.set_ylim(freq_range[1], freq_range[0])  # Inverted y-axis
+            # Plot time series at middle angle (inverted y-axis)
+            mid_angle_idx = len(angles) // 2
+            time_series = syn_gather[mid_angle_idx, time_mask]
+            ax_cwt[1, col_idx].plot(t_samp_filtered, time_series, 'k-')
+            ax_cwt[1, col_idx].set_title(f"{case} - Time Series (@ {angles[mid_angle_idx]}°)")
+            ax_cwt[1, col_idx].set_xlabel("Time (s)")
+            ax_cwt[1, col_idx].set_ylabel("Amplitude")
+            ax_cwt[1, col_idx].grid(True)
+            ax_cwt[1, col_idx].set_xlim(time_range[0], time_range[1])
+            ax_cwt[1, col_idx].set_ylim(time_range[1], time_range[0])  # Inverted y-axis
+            
+            # Plot dominant frequency (inverted y-axis)
+            if cwt_magnitudes.size > 0:
+                max_freq_indices = np.argmax(cwt_magnitudes, axis=1)
+                dominant_freqs = freqs[max_freq_indices]
+                
+                ax_cwt[2, col_idx].plot(t_samp_filtered, dominant_freqs, 'r-')
+                ax_cwt[2, col_idx].set_title(f"{case} - Dominant Frequency")
+                ax_cwt[2, col_idx].set_xlabel("Time (s)")
+                ax_cwt[2, col_idx].set_ylabel("Frequency (Hz)")
+                ax_cwt[2, col_idx].grid(True)
+                ax_cwt[2, col_idx].set_ylim(freq_range[1], freq_range[0])  # Inverted y-axis
+            
+            # Extract CWT magnitudes at t=0.20s (using raw magnitudes)
+            time_target = 0.20
+            time_idx = np.argmin(np.abs(t_samp_filtered - time_target))
+            
+            if time_idx < len(t_samp_filtered):
+                cwt_at_020s['Case'].extend([case] * len(freqs))
+                cwt_at_020s['Frequency'].extend(freqs)
+                cwt_at_020s['Magnitude'].extend(cwt_magnitudes[time_idx, :])  # Raw magnitudes
         
         plt.tight_layout()
         st.pyplot(fig_cwt)
         
-        # Extract CWT magnitudes at t=0.20s (using raw magnitudes)
-        time_target = 0.20
-        time_idx = np.argmin(np.abs(t_samp_filtered - time_target))
-        
-        if time_idx < len(t_samp_filtered):
-            # Plot Frequency vs. Magnitude at t=0.20s (using raw magnitudes)
-            st.subheader("CWT Frequency vs. Magnitude at t=0.20s")
+        # Plot Frequency vs. Magnitude at t=0.20s (using raw magnitudes)
+        if len(cwt_at_020s['Frequency']) > 0:
+            st.subheader("CWT Frequency vs. Magnitude at t=0.20s (Raw Magnitudes)")
             fig_freq_mag, ax_freq_mag = plt.subplots(figsize=(10, 5))
             
-            ax_freq_mag.plot(freqs, cwt_magnitudes[time_idx, :], 'b-')
+            for case in all_gathers.keys():
+                case_mask = np.array(cwt_at_020s['Case']) == case
+                freqs_case = np.array(cwt_at_020s['Frequency'])[case_mask]
+                mags_case = np.array(cwt_at_020s['Magnitude'])[case_mask]  # Raw magnitudes
+                
+                if len(freqs_case) > 0:
+                    ax_freq_mag.plot(freqs_case, mags_case, label=case)
+            
             ax_freq_mag.set_xlabel("Frequency (Hz)")
             ax_freq_mag.set_ylabel("Magnitude (Raw Sum)")
-            ax_freq_mag.set_title("CWT Magnitude Spectrum at t=0.20s")
+            ax_freq_mag.set_title("CWT Magnitude Spectrum at t=0.20s (Raw Values)")
+            ax_freq_mag.legend()
             ax_freq_mag.grid(True)
             ax_freq_mag.set_xlim(freq_range[0], freq_range[1])
             
@@ -796,7 +869,7 @@ def plot_cwt_analysis(syn_gather, t_samp, angles, cwt_scales, cwt_wavelet, wavel
     except Exception as e:
         st.error(f"Error in CWT analysis: {str(e)}")
 
-def plot_spectral_comparison(syn_gather, t_samp, angles, wavelet_freq, time_range, freq_range):
+def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq, time_range, freq_range):
     """Plot spectral comparison at selected angles with frequency-based color coding"""
     st.subheader("Spectral Comparison at Selected Angles")
     
@@ -819,35 +892,38 @@ def plot_spectral_comparison(syn_gather, t_samp, angles, wavelet_freq, time_rang
         norm = plt.Normalize(freq_range[0], freq_range[1])
         cmap = plt.get_cmap('jet')
         
-        for angle in selected_angles:
-            angle_idx = np.where(angles == angle)[0][0]
-            trace = syn_gather[angle_idx, time_mask]
+        for case in all_gathers.keys():
+            syn_gather = all_gathers[case]
             
-            # FFT
-            spectrum = np.abs(np.fft.rfft(trace))
-            freqs = np.fft.rfftfreq(len(trace), t_samp[1]-t_samp[0])
-            
-            # Filter frequencies
-            freq_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
-            freqs_filtered = freqs[freq_mask]
-            spectrum_filtered = spectrum[freq_mask]
-            
-            # Normalize spectrum
-            if np.max(spectrum_filtered) > 0:
-                spectrum_filtered = spectrum_filtered / np.max(spectrum_filtered)
-            
-            # Create color array based on frequency
-            colors = cmap(norm(freqs_filtered))
-            
-            # Plot each frequency component separately with its own color
-            for i in range(len(freqs_filtered)-1):
-                ax_compare.plot(
-                    [angle, angle],  # X (angle)
-                    [freqs_filtered[i], freqs_filtered[i+1]],  # Y (frequency)
-                    [spectrum_filtered[i], spectrum_filtered[i+1]],  # Z (amplitude)
-                    color=colors[i],
-                    linewidth=2
-                )
+            for angle in selected_angles:
+                angle_idx = np.where(angles == angle)[0][0]
+                trace = syn_gather[angle_idx, time_mask]
+                
+                # FFT
+                spectrum = np.abs(np.fft.rfft(trace))
+                freqs = np.fft.rfftfreq(len(trace), t_samp[1]-t_samp[0])
+                
+                # Filter frequencies
+                freq_mask = (freqs >= freq_range[0]) & (freqs <= freq_range[1])
+                freqs_filtered = freqs[freq_mask]
+                spectrum_filtered = spectrum[freq_mask]
+                
+                # Normalize spectrum
+                if np.max(spectrum_filtered) > 0:
+                    spectrum_filtered = spectrum_filtered / np.max(spectrum_filtered)
+                
+                # Create color array based on frequency
+                colors = cmap(norm(freqs_filtered))
+                
+                # Plot each frequency component separately with its own color
+                for i in range(len(freqs_filtered)-1):
+                    ax_compare.plot(
+                        [angle, angle],  # X (angle)
+                        [freqs_filtered[i], freqs_filtered[i+1]],  # Y (frequency)
+                        [spectrum_filtered[i], spectrum_filtered[i+1]],  # Z (amplitude)
+                        color=colors[i],
+                        linewidth=2
+                    )
         
         ax_compare.set_title("3D Spectral Comparison (Color by Frequency)")
         ax_compare.set_xlabel("Angle (degrees)")
@@ -870,7 +946,7 @@ if uploaded_file is not None:
         # Store the original file object
         original_file = uploaded_file
         
-        # Process data with selected model
+        # Process data with selected model and saturations
         logs, mc_results = process_data(
             original_file, 
             model_choice,
@@ -881,10 +957,8 @@ if uploaded_file is not None:
             rho_b=rho_b, k_b=k_b,
             rho_o=rho_o, k_o=k_o,
             rho_g=rho_g, k_g=k_g,
-            sw_norm=sw_norm,
-            so_norm=so_norm,
-            sg_norm=sg_norm,
             sand_cutoff=sand_cutoff,
+            sw=sw, so=so, sg=sg,  # Pass saturation values
             critical_porosity=critical_porosity if 'critical_porosity' in locals() else None,
             coordination_number=coordination_number if 'coordination_number' in locals() else None,
             effective_pressure=effective_pressure if 'effective_pressure' in locals() else None
@@ -900,12 +974,12 @@ if uploaded_file is not None:
         )
         
         # Visualization
-        ccc = ['#B3B3B3','blue','green','red','#996633']
+        ccc = ['#B3B3B3','blue','green','red','magenta','#996633']  # Added magenta for mixed case
         cmap_facies = colors.ListedColormap(ccc[0:len(ccc)], 'indexed')
 
         # Create a filtered dataframe for the selected depth range
         ll = logs.loc[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]
-        cluster = np.repeat(np.expand_dims(ll['LFC'].values,1), 100, 1)
+        cluster = np.repeat(np.expand_dims(ll['LFC_B'].values,1), 100, 1)
 
         # Only show well log visualization for non-RPT models
         if model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
@@ -914,16 +988,20 @@ if uploaded_file is not None:
             ax[0].plot(ll.VSH, ll.DEPTH, '-g', label='Vsh')
             ax[0].plot(ll.SW, ll.DEPTH, '-b', label='Sw')
             ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
-            ax[1].plot(ll.IP_FRM, ll.DEPTH, '-b', label='FRM Result')
+            ax[1].plot(ll.IP_FRMG, ll.DEPTH, '-r', label='Gas')
+            ax[1].plot(ll.IP_FRMB, ll.DEPTH, '-b', label='Brine')
+            ax[1].plot(ll.IP_FRMMIX, ll.DEPTH, '-m', label='Mixed')
             ax[1].plot(ll.IP, ll.DEPTH, '-', color='0.5', label='Original')
-            ax[2].plot(ll.VPVS_FRM, ll.DEPTH, '-b', label='FRM Result')
+            ax[2].plot(ll.VPVS_FRMG, ll.DEPTH, '-r', label='Gas')
+            ax[2].plot(ll.VPVS_FRMB, ll.DEPTH, '-b', label='Brine')
+            ax[2].plot(ll.VPVS_FRMMIX, ll.DEPTH, '-m', label='Mixed')
             ax[2].plot(ll.VPVS, ll.DEPTH, '-', color='0.5', label='Original')
-            im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=4)
+            im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=5)
 
             cbar = plt.colorbar(im, ax=ax[3])
-            cbar.set_label((12*' ').join(['undef', 'brine', 'oil', 'gas', 'shale']))
-            cbar.set_ticks(range(0,5))
-            cbar.set_ticklabels(['']*5)
+            cbar.set_label((12*' ').join(['undef', 'brine', 'oil', 'gas', 'mixed', 'shale']))
+            cbar.set_ticks(range(0,6))
+            cbar.set_ticklabels(['']*6)
 
             for i in ax[:-1]:
                 i.set_ylim(ztop,zbot)
@@ -957,14 +1035,20 @@ if uploaded_file is not None:
         else:
             st.warning("Could not generate interactive crossplot due to data issues")
         
-        # Original 2D crossplots
+        # Original 2D crossplots (now including mixed case)
         st.header("2D Crossplots")
-        fig2, ax2 = plt.subplots(figsize=(10, 5))
-        ax2.scatter(logs.IP, logs.VPVS, 20, logs.LFC, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=4)
-        ax2.set_xlim(3000,16000); ax2.set_ylim(1.5,3)
-        ax2.set_title('Rock Physics Crossplot')
-        ax2.set_xlabel('IP (m/s*g/cc)')
-        ax2.set_ylabel('Vp/Vs')
+        fig2, ax2 = plt.subplots(nrows=1, ncols=5, figsize=(25, 4))  # Added column for mixed case
+        ax2[0].scatter(logs.IP, logs.VPVS, 20, logs.LFC_B, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=5)
+        ax2[1].scatter(logs.IP_FRMB, logs.VPVS_FRMB, 20, logs.LFC_B, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=5)
+        ax2[2].scatter(logs.IP_FRMO, logs.VPVS_FRMO, 20, logs.LFC_O, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=5)
+        ax2[3].scatter(logs.IP_FRMG, logs.VPVS_FRMG, 20, logs.LFC_G, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=5)
+        ax2[4].scatter(logs.IP_FRMMIX, logs.VPVS_FRMMIX, 20, logs.LFC_MIX, marker='o', edgecolors='none', alpha=0.5, cmap=cmap_facies, vmin=0, vmax=5)
+        ax2[0].set_xlim(3000,16000); ax2[0].set_ylim(1.5,3)
+        ax2[0].set_title('Original Data')
+        ax2[1].set_title('FRM to Brine')
+        ax2[2].set_title('FRM to Oil')
+        ax2[3].set_title('FRM to Gas')
+        ax2[4].set_title(f'FRM to Mixed (Sw={sw:.2f}, So={so:.2f}, Sg={sg:.2f})')
         st.pyplot(fig2)
 
         # 3D Crossplot if enabled
@@ -973,15 +1057,13 @@ if uploaded_file is not None:
             fig3d = plt.figure(figsize=(10, 8))
             ax3d = fig3d.add_subplot(111, projection='3d')
             
-            # Color by litho-fluid class
-            colors = ['#B3B3B3','blue','green','red','#996633']
-            for lfc in range(5):
-                mask = logs['LFC'] == lfc
+            for case, color in [('B', 'blue'), ('O', 'green'), ('G', 'red'), ('MIX', 'magenta')]:
+                mask = logs[f'LFC_{case}'] == int(case == 'B')*1 + int(case == 'O')*2 + int(case == 'G')*3 + int(case == 'MIX')*4
                 ax3d.scatter(
-                    logs.loc[mask, 'IP_FRM'],
-                    logs.loc[mask, 'VPVS_FRM'],
-                    logs.loc[mask, 'RHO_FRM'],
-                    c=colors[lfc], label=f'Class {lfc}', alpha=0.5
+                    logs.loc[mask, f'IP_FRM{case}'],
+                    logs.loc[mask, f'VPVS_FRM{case}'],
+                    logs.loc[mask, f'RHO_FRM{case}'],
+                    c=color, label=case, alpha=0.5
                 )
             
             ax3d.set_xlabel('IP (m/s*g/cc)')
@@ -996,27 +1078,33 @@ if uploaded_file is not None:
             st.header("Property Distributions")
             fig_hist, ax_hist = plt.subplots(2, 2, figsize=(12, 8))
             
-            ax_hist[0,0].hist(logs.IP_FRM, bins=30, alpha=0.5, label='FRM Result', color='blue')
-            ax_hist[0,0].hist(logs.IP, bins=30, alpha=0.5, label='Original', color='0.5')
+            ax_hist[0,0].hist(logs.IP_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
+            ax_hist[0,0].hist(logs.IP_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
+            ax_hist[0,0].hist(logs.IP_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[0,0].hist(logs.IP_FRMMIX, bins=30, alpha=0.5, label='Mixed', color='magenta')
             ax_hist[0,0].set_xlabel('IP (m/s*g/cc)')
             ax_hist[0,0].set_ylabel('Frequency')
             ax_hist[0,0].legend()
             
-            ax_hist[0,1].hist(logs.VPVS_FRM, bins=30, alpha=0.5, label='FRM Result', color='blue')
-            ax_hist[0,1].hist(logs.VPVS, bins=30, alpha=0.5, label='Original', color='0.5')
+            ax_hist[0,1].hist(logs.VPVS_FRMB, bins=30, alpha=0.5, label='Brine', color='blue')
+            ax_hist[0,1].hist(logs.VPVS_FRMO, bins=30, alpha=0.5, label='Oil', color='green')
+            ax_hist[0,1].hist(logs.VPVS_FRMG, bins=30, alpha=0.5, label='Gas', color='red')
+            ax_hist[0,1].hist(logs.VPVS_FRMMIX, bins=30, alpha=0.5, label='Mixed', color='magenta')
             ax_hist[0,1].set_xlabel('Vp/Vs')
             ax_hist[0,1].legend()
             
-            ax_hist[1,0].hist(logs.RHO_FRM, bins=30, color='blue', alpha=0.7)
-            ax_hist[1,0].hist(logs.RHO, bins=30, color='0.5', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMB, bins=30, color='blue', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMO, bins=30, color='green', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMG, bins=30, color='red', alpha=0.7)
+            ax_hist[1,0].hist(logs.RHO_FRMMIX, bins=30, color='magenta', alpha=0.7)
             ax_hist[1,0].set_xlabel('Density (g/cc)')
             ax_hist[1,0].set_ylabel('Frequency')
-            ax_hist[1,0].legend(['FRM Result', 'Original'])
+            ax_hist[1,0].legend(['Brine', 'Oil', 'Gas', 'Mixed'])
             
-            ax_hist[1,1].hist(logs.LFC, bins=[0,1,2,3,4,5], alpha=0.5, rwidth=0.8, align='left')
+            ax_hist[1,1].hist(logs.LFC_B, bins=[0,1,2,3,4,5,6], alpha=0.5, rwidth=0.8, align='left')
             ax_hist[1,1].set_xlabel('Litho-Fluid Class')
-            ax_hist[1,1].set_xticks([0.5,1.5,2.5,3.5,4.5])
-            ax_hist[1,1].set_xticklabels(['Undef','Brine','Oil','Gas','Shale'])
+            ax_hist[1,1].set_xticks([0.5,1.5,2.5,3.5,4.5,5.5])
+            ax_hist[1,1].set_xticklabels(['Undef','Brine','Oil','Gas','Mixed','Shale'])
             
             plt.tight_layout()
             st.pyplot(fig_hist)
@@ -1026,6 +1114,14 @@ if uploaded_file is not None:
             st.header("AVO Modeling")
             middle_top = ztop + (zbot - ztop) * 0.4
             middle_bot = ztop + (zbot - ztop) * 0.6
+            
+            cases = ['Brine', 'Oil', 'Gas', 'Mixed']
+            case_data = {
+                'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'b'},
+                'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'g'},
+                'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'r'},
+                'Mixed': {'vp': 'VP_FRMMIX', 'vs': 'VS_FRMMIX', 'rho': 'RHO_FRMMIX', 'color': 'm'}
+            }
             
             wlt_time, wlt_amp = ricker_wavelet(wavelet_freq)
             t_samp = np.arange(0, 0.5, 0.0001)
@@ -1049,29 +1145,38 @@ if uploaded_file is not None:
             
             angles = np.arange(min_angle, max_angle + 1, angle_step)
             
-            # Get average properties for upper layer (shale)
-            vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
-            vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
-            rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+            # Store AVO attributes for Smith-Gidlow analysis
+            avo_attributes = {'Case': [], 'Intercept': [], 'Gradient': [], 'Fluid_Factor': []}
             
-            # Get average properties for middle layer (sand with fluid substitution)
-            vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'VP_FRM'].values.mean()
-            vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'VS_FRM'].values.mean()
-            rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), 'RHO_FRM'].values.mean()
+            for case in cases:
+                vp_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VP'].values.mean()
+                vs_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'VS'].values.mean()
+                rho_upper = logs.loc[(logs.DEPTH >= middle_top - (middle_bot-middle_top)), 'RHO'].values.mean()
+                
+                vp_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean()
+                vs_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean()
+                rho_middle = logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean()
+                
+                # Calculate reflection coefficients
+                rc = []
+                for angle in angles:
+                    rc.append(calculate_reflection_coefficients(
+                        vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                    ))
+                
+                # Fit AVO curve to get intercept and gradient
+                intercept, gradient, _ = fit_avo_curve(angles, rc)
+                fluid_factor = intercept + 1.16 * (vp_upper/vs_upper) * (intercept - gradient)
+                
+                # Store attributes for Smith-Gidlow analysis
+                avo_attributes['Case'].append(case)
+                avo_attributes['Intercept'].append(intercept)
+                avo_attributes['Gradient'].append(gradient)
+                avo_attributes['Fluid_Factor'].append(fluid_factor)
+                
+                # Plot AVO curve
+                ax_avo.plot(angles, rc, f"{case_data[case]['color']}-", label=f"{case}")
             
-            # Calculate reflection coefficients
-            rc = []
-            for angle in angles:
-                rc.append(calculate_reflection_coefficients(
-                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
-                ))
-            
-            # Fit AVO curve to get intercept and gradient
-            intercept, gradient, _ = fit_avo_curve(angles, rc)
-            fluid_factor = intercept + 1.16 * (vp_upper/vs_upper) * (intercept - gradient)
-            
-            # Plot AVO curve
-            ax_avo.plot(angles, rc, "b-", label="AVO Response")
             ax_avo.set_title("AVO Reflection Coefficients (Middle Interface)")
             ax_avo.set_xlabel("Angle (degrees)")
             ax_avo.set_ylabel("Reflection Coefficient")
@@ -1085,18 +1190,25 @@ if uploaded_file is not None:
             if show_smith_gidlow:
                 st.header("Smith-Gidlow AVO Attributes")
                 
-                # Display attributes
-                st.markdown(f"""
-                - **Intercept (A):** {intercept:.4f}
-                - **Gradient (B):** {gradient:.4f}
-                - **Fluid Factor:** {fluid_factor:.4f}
-                """)
+                # Create DataFrame for AVO attributes
+                avo_df = pd.DataFrame(avo_attributes)
+                
+                # Display attributes table
+                if not avo_df.empty:
+                    numeric_cols = avo_df.select_dtypes(include=[np.number]).columns
+                    st.dataframe(avo_df.style.format("{:.4f}", subset=numeric_cols))
+                else:
+                    st.warning("No AVO attributes calculated")
                 
                 # Plot intercept vs gradient
                 fig_sg, ax_sg = plt.subplots(figsize=(8, 6))
-                ax_sg.scatter(intercept, gradient, color='blue', s=100)
-                ax_sg.text(intercept, gradient, f"Sw={sw_norm:.2f}\nSo={so_norm:.2f}\nSg={sg_norm:.2f}", 
-                          fontsize=9, ha='right', va='bottom')
+                colors = {'Brine': 'blue', 'Oil': 'green', 'Gas': 'red', 'Mixed': 'magenta'}
+                
+                for idx, row in avo_df.iterrows():
+                    ax_sg.scatter(row['Intercept'], row['Gradient'], 
+                                 color=colors[row['Case']], s=100, label=row['Case'])
+                    ax_sg.text(row['Intercept'], row['Gradient'], row['Case'], 
+                              fontsize=9, ha='right', va='bottom')
                 
                 # Add background classification
                 x = np.linspace(-0.5, 0.5, 100)
@@ -1116,12 +1228,13 @@ if uploaded_file is not None:
                 
                 # Fluid Factor analysis
                 st.subheader("Fluid Factor Analysis")
-                st.markdown(f"""
-                The fluid factor value of **{fluid_factor:.4f}** suggests:
-                - Positive values may indicate hydrocarbon presence
-                - Negative values typically indicate brine-filled rocks
-                - The magnitude relates to fluid contrast
-                """)
+                fig_ff, ax_ff = plt.subplots(figsize=(8, 4))
+                ax_ff.bar(avo_df['Case'], avo_df['Fluid_Factor'], 
+                         color=[colors[c] for c in avo_df['Case']])
+                ax_ff.set_ylabel('Fluid Factor')
+                ax_ff.set_title('Fluid Factor by Fluid Type')
+                ax_ff.grid(True)
+                st.pyplot(fig_ff)
 
             # Time-Frequency Analysis of Synthetic Gathers
             st.header("Time-Frequency Analysis of Synthetic Gathers")
@@ -1149,18 +1262,18 @@ if uploaded_file is not None:
             )
             
             # Generate synthetic gathers for time-frequency analysis
-            syn_gather, t_samp = perform_time_frequency_analysis(
-                logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot
+            all_gathers, t_samp = perform_time_frequency_analysis(
+                logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot, sw, so, sg
             )
             
             # Plot frequency domain analysis
-            plot_frequency_analysis(syn_gather, t_samp, angles, wavelet_freq, time_range, freq_range)
+            plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq, time_range, freq_range)
             
             # Plot CWT analysis
-            plot_cwt_analysis(syn_gather, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range)
+            plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range)
             
             # Plot spectral comparison
-            plot_spectral_comparison(syn_gather, t_samp, angles, wavelet_freq, time_range, freq_range)
+            plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq, time_range, freq_range)
 
             # Synthetic gathers
             st.header("Synthetic Seismic Gathers (Middle Interface)")
@@ -1171,26 +1284,29 @@ if uploaded_file is not None:
                 key='time_range'
             )
             
-            fig4, ax4 = plt.subplots(figsize=(10, 5))
+            fig4, ax4 = plt.subplots(1, 4, figsize=(24, 5))  # Added column for mixed case
             
-            extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
-            im = ax4.imshow(syn_gather.T, aspect='auto', extent=extent,
-                          cmap=selected_cmap, vmin=-np.max(np.abs(syn_gather)), 
-                          vmax=np.max(np.abs(syn_gather)))
+            for idx, case in enumerate(cases):
+                syn_gather = all_gathers[case]
+                
+                extent = [angles[0], angles[-1], t_samp[-1], t_samp[0]]
+                im = ax4[idx].imshow(syn_gather.T, aspect='auto', extent=extent,
+                                   cmap=selected_cmap, vmin=-np.max(np.abs(syn_gather)), 
+                                   vmax=np.max(np.abs(syn_gather)))
+                
+                props_text = f"Vp: {logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vp']].values.mean():.0f} m/s\n" \
+                            f"Vs: {logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['vs']].values.mean():.0f} m/s\n" \
+                            f"Rho: {logs.loc[(logs.DEPTH >= middle_top) & (logs.DEPTH <= middle_bot), case_data[case]['rho']].values.mean():.2f} g/cc"
+                ax4[idx].text(0.05, 0.95, props_text, transform=ax4[idx].transAxes,
+                             fontsize=9, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
+                
+                ax4[idx].set_title(f"{case} Case", fontweight='bold')
+                ax4[idx].set_xlabel("Angle (degrees)")
+                ax4[idx].set_ylabel("Time (s)")
+                ax4[idx].set_ylim(time_max, time_min)
+                
+                plt.colorbar(im, ax=ax4[idx], label='Amplitude')
             
-            props_text = f"Vp: {vp_middle:.0f} m/s\n" \
-                        f"Vs: {vs_middle:.0f} m/s\n" \
-                        f"Rho: {rho_middle:.2f} g/cc\n" \
-                        f"Sw: {sw_norm:.2f}, So: {so_norm:.2f}, Sg: {sg_norm:.2f}"
-            ax4.text(0.05, 0.95, props_text, transform=ax4.transAxes,
-                     fontsize=9, verticalalignment='top', bbox=dict(facecolor='white', alpha=0.7))
-            
-            ax4.set_title("Synthetic Gather", fontweight='bold')
-            ax4.set_xlabel("Angle (degrees)")
-            ax4.set_ylabel("Time (s)")
-            ax4.set_ylim(time_max, time_min)
-            
-            plt.colorbar(im, ax=ax4, label='Amplitude')
             plt.tight_layout()
             st.pyplot(fig4)
 
@@ -1241,25 +1357,36 @@ if uploaded_file is not None:
                             rho_b=rho_b, k_b=k_b,
                             rho_o=rho_o, k_o=k_o,
                             rho_g=rho_g, k_g=k_g,
-                            sw_norm=sw_norm,
-                            so_norm=so_norm,
-                            sg_norm=sg_norm,
-                            sand_cutoff=sand_cutoff
+                            sand_cutoff=sand_cutoff,
+                            sw=sw, so=so, sg=sg  # Pass saturation values
                         )
                         
                         # Filter sand intervals (VSH < sand_cutoff)
                         sand_mask = logs_gassmann['VSH'] <= sand_cutoff
                         
                         # Select appropriate columns based on fluid case
-                        ip = logs_gassmann.loc[sand_mask, 'IP_FRM']
-                        vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRM']
+                        if fluid == 'gas':
+                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMG']
+                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMG']
+                            color = 'red'
+                            label = 'Gassmann Gas'
+                        elif fluid == 'oil':
+                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMO']
+                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMO']
+                            color = 'green'
+                            label = 'Gassmann Oil'
+                        else:  # mixed
+                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMMIX']
+                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMMIX']
+                            color = 'magenta'
+                            label = f'Gassmann Mixed (Sw={sw:.2f}, So={so:.2f})'
                         
                         # Plot the points if we have valid data
                         if len(ip) > 0 and len(vpvs) > 0:
-                            plt.scatter(ip, vpvs, c='k', s=20, alpha=0.7, label=f'Current (Sw={sw_norm:.2f})', edgecolors='k', linewidths=0.5)
+                            plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
                             plt.legend()
                         else:
-                            st.warning("No valid sand points found for plotting")
+                            st.warning(f"No valid {fluid} sand points found for plotting")
                         
                     except Exception as e:
                         st.warning(f"Could not plot Gassmann points: {str(e)}")
@@ -1278,6 +1405,10 @@ if uploaded_file is not None:
             # Display Oil Case RPT with Gassmann points
             st.subheader("Oil Case RPT with Gassmann Fluid Substitution")
             plot_rpt_with_gassmann("Oil Case RPT", fluid='oil')
+            
+            # Display Mixed Case RPT with Gassmann points
+            st.subheader("Mixed Case RPT with Gassmann Fluid Substitution")
+            plot_rpt_with_gassmann("Mixed Case RPT", fluid='mixed')
 
         # Uncertainty Analysis Results
         if include_uncertainty and mc_results and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
@@ -1355,9 +1486,6 @@ if uploaded_file is not None:
                                 c=mc_results['Fluid_Factor'], cmap='coolwarm', 
                                 alpha=0.3, s=10)
             
-            # Add current result
-            ax_avo_cross.scatter(intercept, gradient, c='k', s=100, label='Current')
-            
             # Add colorbar
             sc = ax_avo_cross.scatter([], [], c=[], cmap='coolwarm')
             plt.colorbar(sc, label='Fluid Factor', ax=ax_avo_cross)
@@ -1375,7 +1503,6 @@ if uploaded_file is not None:
             ax_avo_cross.axvline(0, color='k', alpha=0.3)
             ax_avo_cross.set_xlim(-0.3, 0.3)
             ax_avo_cross.set_ylim(-0.3, 0.3)
-            ax_avo_cross.legend()
             
             st.pyplot(fig_avo_cross)
 
@@ -1457,6 +1584,14 @@ if uploaded_file is not None:
                         buf_oil.seek(0)
                         plt.close()
                         
+                        fig_rpt_mix = plt.figure()
+                        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, (Ko*so + Kg*sg)/(so+sg), (Do*so + Dg*sg)/(so+sg), phi, sw)
+                        plt.title(f"{model_choice.split(' ')[0]} RPT - Mixed Case")
+                        buf_mix = BytesIO()
+                        plt.savefig(buf_mix, format='png', dpi=150, bbox_inches='tight')
+                        buf_mix.seek(0)
+                        plt.close()
+                        
                         # Create download buttons
                         st.download_button(
                             label="Download Gas RPT",
@@ -1470,24 +1605,30 @@ if uploaded_file is not None:
                             file_name="rpt_oil.png",
                             mime="image/png"
                         )
+                        st.download_button(
+                            label="Download Mixed RPT",
+                            data=buf_mix.getvalue(),
+                            file_name="rpt_mixed.png",
+                            mime="image/png"
+                        )
                         results.append("✓ Successfully exported RPT plots")
                         continue
                     elif plot_name == "Frequency Analysis" and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         # Need to recreate the frequency analysis plot
-                        syn_gather, t_samp = perform_time_frequency_analysis(
-                            logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot
+                        all_gathers, t_samp = perform_time_frequency_analysis(
+                            logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot, sw, so, sg
                         )
-                        fig_freq, _ = plt.subplots(figsize=(10, 5))
-                        plot_frequency_analysis(syn_gather, t_samp, angles, wavelet_freq, time_range, freq_range)
+                        fig_freq, _ = plt.subplots(1, 4, figsize=(24, 5))
+                        plot_frequency_analysis(all_gathers, t_samp, angles, wavelet_freq, time_range, freq_range)
                         success, error = export_plot(fig_freq, plot_name, "frequency_analysis.png")
                         plt.close()
                     elif plot_name == "Time-Frequency Analysis" and model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
                         # Need to recreate the CWT analysis plot
-                        syn_gather, t_samp = perform_time_frequency_analysis(
-                            logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot
+                        all_gathers, t_samp = perform_time_frequency_analysis(
+                            logs, angles, wavelet_freq, cwt_scales, cwt_wavelet, middle_top, middle_bot, sw, so, sg
                         )
-                        fig_cwt, _ = plt.subplots(3, 1, figsize=(10, 12))
-                        plot_cwt_analysis(syn_gather, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range)
+                        fig_cwt, _ = plt.subplots(3, 4, figsize=(24, 12))
+                        plot_cwt_analysis(all_gathers, t_samp, angles, cwt_scales, cwt_wavelet, wavelet_freq, time_range, freq_range)
                         success, error = export_plot(fig_cwt, plot_name, "time_frequency_analysis.png")
                         plt.close()
                     else:
