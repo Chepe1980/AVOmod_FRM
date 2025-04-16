@@ -1017,7 +1017,12 @@ def plot_rpt_with_gassmann(title, fluid='gas'):
             
             # Plot only if valid data exists
             if len(ip) > 0 and len(vpvs) > 0:
+                # Plot all sand points (scatter)
                 plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
+                
+                # Plot mean values (single point)
+                plt.scatter(np.mean(ip), np.mean(vpvs), c='black', s=100, marker='x', label='Mean')
+                
                 plt.legend()
             else:
                 st.warning(f"No valid {fluid} sand points found for plotting")
