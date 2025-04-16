@@ -166,7 +166,7 @@ def handle_errors(func):
             st.stop()
     return wrapper
 
-# Rock Physics Models (all functions remain exactly the same as in your original code)
+# Rock Physics Models
 def frm(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi):
     """Gassmann's Fluid Substitution"""
     vp1 = vp1/1000.  # Convert m/s to km/s
@@ -946,6 +946,92 @@ def plot_spectral_comparison(all_gathers, t_samp, angles, wavelet_freq, time_ran
         
         st.pyplot(fig_compare)
 
+# Fixed RPT plotting function
+def plot_rpt_with_gassmann(title, fluid='gas'):
+    """Generate RPT plot with Gassmann points (fixed shape mismatch)"""
+    plt.figure(figsize=(8, 6))
+    
+    # Model parameters (quartz)
+    D0, K0, G0 = 2.65, 36.6, 45  
+    Db, Kb = rho_b, k_b
+    Do, Ko = rho_o, k_o
+    Dg, Kg = rho_g, k_g
+    
+    phi = np.linspace(0.1, rpt_phi_c, 10)
+    sw = np.linspace(0, 1, 5)
+    
+    # Generate RPT background
+    if model_choice == "Soft Sand RPT (rockphypy)":
+        Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+    else:
+        Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
+    
+    if fluid == 'gas':
+        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
+    elif fluid == 'oil':
+        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
+    else:  # mixed
+        # Use weighted average for mixed fluid
+        K_mix = (Ko * so + Kg * sg) / (so + sg + 1e-10)
+        D_mix = (Do * so + Dg * sg) / (so + sg + 1e-10)
+        QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, K_mix, D_mix, phi, sw)
+    
+    plt.title(f"{model_choice.split(' ')[0]} RPT - {fluid.capitalize()} Case")
+    
+    # Add Gassmann fluid substitution points (filtered and averaged)
+    if uploaded_file is not None:
+        try:
+            # Process data with Gassmann model
+            logs_gassmann, _ = process_data(
+                uploaded_file, 
+                "Gassmann's Fluid Substitution",
+                include_uncertainty=False,
+                rho_qz=rho_qz, k_qz=k_qz, mu_qz=mu_qz,
+                rho_sh=rho_sh, k_sh=k_sh, mu_sh=mu_sh,
+                rho_b=rho_b, k_b=k_b,
+                rho_o=rho_o, k_o=k_o,
+                rho_g=rho_g, k_g=k_g,
+                sand_cutoff=sand_cutoff,
+                sw=sw, so=so, sg=sg
+            )
+            
+            # Filter sand intervals (VSH <= sand_cutoff)
+            sand_mask = logs_gassmann['VSH'] <= sand_cutoff
+            
+            # Select properties based on fluid case
+            if fluid == 'gas':
+                ip = logs_gassmann.loc[sand_mask, 'IP_FRMG'].values
+                vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMG'].values
+                color = 'red'
+                label = 'Gassmann Gas'
+            elif fluid == 'oil':
+                ip = logs_gassmann.loc[sand_mask, 'IP_FRMO'].values
+                vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMO'].values
+                color = 'green'
+                label = 'Gassmann Oil'
+            else:  # mixed
+                ip = logs_gassmann.loc[sand_mask, 'IP_FRMMIX'].values
+                vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMMIX'].values
+                color = 'magenta'
+                label = f'Gassmann Mixed (Sw={sw:.2f}, So={so:.2f})'
+            
+            # Plot only if valid data exists
+            if len(ip) > 0 and len(vpvs) > 0:
+                plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
+                plt.legend()
+            else:
+                st.warning(f"No valid {fluid} sand points found for plotting")
+            
+        except Exception as e:
+            st.warning(f"Could not plot Gassmann points: {str(e)}")
+    
+    # Save plot to a buffer and display in Streamlit
+    buf = BytesIO()
+    plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
+    buf.seek(0)
+    st.image(buf, use_column_width=True)
+    plt.close()
+
 # Main content area
 if uploaded_file is not None:
     try:
@@ -1319,90 +1405,6 @@ if uploaded_file is not None:
         # Rock Physics Templates (RPT)
         if model_choice in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"] and rockphypy_available:
             st.header("Rock Physics Templates (RPT) with Gassmann Fluid Substitution")
-            
-            # Model parameters
-            D0, K0, G0 = 2.65, 36.6, 45  # Mineral properties (quartz)
-            Db, Kb = rho_b, k_b            # Brine from user inputs
-            Do, Ko = rho_o, k_o            # Oil from user inputs
-            Dg, Kg = rho_g, k_g            # Gas from user inputs
-            
-            phi = np.linspace(0.1, rpt_phi_c, 10)  # Porosity range
-            sw = np.linspace(0, 1, 5)              # Water saturation
-            
-            # Function to generate and display RPT plot with Gassmann points
-            def plot_rpt_with_gassmann(title, fluid='gas'):
-                plt.figure(figsize=(8, 6))
-                
-                # Generate RPT background
-                if model_choice == "Soft Sand RPT (rockphypy)":
-                    Kdry, Gdry = GM.softsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                else:
-                    Kdry, Gdry = GM.stiffsand(K0, G0, phi, rpt_phi_c, rpt_Cn, rpt_sigma, f=0.5)
-                
-                if fluid == 'gas':
-                    QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Kg, Dg, phi, sw)
-                else:
-                    QI.plot_rpt(Kdry, Gdry, K0, D0, Kb, Db, Ko, Do, phi, sw)
-                
-                plt.title(f"{model_choice.split(' ')[0]} RPT - {fluid.capitalize()} Case")
-                
-                # Add Gassmann fluid substitution points from logs
-                if original_file is not None:
-                    try:
-                        # Reset file pointer to beginning
-                        original_file.seek(0)
-                        
-                        # Process data with Gassmann model
-                        logs_gassmann, _ = process_data(
-                            original_file, 
-                            "Gassmann's Fluid Substitution",
-                            include_uncertainty=False,
-                            mc_iterations=1,
-                            rho_qz=rho_qz, k_qz=k_qz, mu_qz=mu_qz,
-                            rho_sh=rho_sh, k_sh=k_sh, mu_sh=mu_sh,
-                            rho_b=rho_b, k_b=k_b,
-                            rho_o=rho_o, k_o=k_o,
-                            rho_g=rho_g, k_g=k_g,
-                            sand_cutoff=sand_cutoff,
-                            sw=sw, so=so, sg=sg  # Pass saturation values
-                        )
-                        
-                        # Filter sand intervals (VSH < sand_cutoff)
-                        sand_mask = logs_gassmann['VSH'] <= sand_cutoff
-                        
-                        # Select appropriate columns based on fluid case
-                        if fluid == 'gas':
-                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMG']
-                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMG']
-                            color = 'red'
-                            label = 'Gassmann Gas'
-                        elif fluid == 'oil':
-                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMO']
-                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMO']
-                            color = 'green'
-                            label = 'Gassmann Oil'
-                        else:  # mixed
-                            ip = logs_gassmann.loc[sand_mask, 'IP_FRMMIX']
-                            vpvs = logs_gassmann.loc[sand_mask, 'VPVS_FRMMIX']
-                            color = 'magenta'
-                            label = f'Gassmann Mixed (Sw={sw:.2f}, So={so:.2f})'
-                        
-                        # Plot the points if we have valid data
-                        if len(ip) > 0 and len(vpvs) > 0:
-                            plt.scatter(ip, vpvs, c=color, s=20, alpha=0.7, label=label, edgecolors='k', linewidths=0.5)
-                            plt.legend()
-                        else:
-                            st.warning(f"No valid {fluid} sand points found for plotting")
-                        
-                    except Exception as e:
-                        st.warning(f"Could not plot Gassmann points: {str(e)}")
-                
-                # Save plot to a buffer and display in Streamlit
-                buf = BytesIO()
-                plt.savefig(buf, format='png', dpi=150, bbox_inches='tight')
-                buf.seek(0)
-                st.image(buf, use_column_width=True)
-                plt.close()
             
             # Display Gas Case RPT with Gassmann points
             st.subheader("Gas Case RPT with Gassmann Fluid Substitution")
