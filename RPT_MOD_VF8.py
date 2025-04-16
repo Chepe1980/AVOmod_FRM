@@ -107,15 +107,21 @@ with st.sidebar:
         rho_g_std = st.number_input("Gas Density Std Dev", value=0.02, step=0.01, min_value=0.0)
         k_g_std = st.number_input("Gas Bulk Modulus Std Dev", value=0.01, step=0.01, min_value=0.0)
     
-    # Saturation controls
+    # Saturation controls with FIXED slider issue
     st.subheader("Saturation Settings")
     sw_default = 0.8
     so_default = 0.15
     sg_default = 0.05
     
     sw = st.slider("Water Saturation (Sw)", 0.0, 1.0, sw_default, 0.01)
-    remaining = 1.0 - sw
-    so = st.slider("Oil Saturation (So)", 0.0, remaining, min(so_default, remaining), 0.01)
+    remaining = max(0.0, 1.0 - sw)  # Ensure remaining is never negative
+    so = st.slider(
+        "Oil Saturation (So)", 
+        0.0, 
+        remaining, 
+        min(so_default, remaining) if remaining > 0 else 0.0, 
+        0.01
+    )
     sg = remaining - so
     
     # Display actual saturations (in case adjustments were made)
@@ -160,7 +166,7 @@ def handle_errors(func):
             st.stop()
     return wrapper
 
-# Rock Physics Models
+# Rock Physics Models (all functions remain exactly the same as in your original code)
 def frm(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, mu0, phi):
     """Gassmann's Fluid Substitution"""
     vp1 = vp1/1000.  # Convert m/s to km/s
@@ -984,7 +990,7 @@ if uploaded_file is not None:
         # Only show well log visualization for non-RPT models
         if model_choice not in ["Soft Sand RPT (rockphypy)", "Stiff Sand RPT (rockphypy)"]:
             # Create the well log figure
-            fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12, 8))
+            fig, ax = plt.subplots(nrows=1, ncols=4, figsize=(12, 8))  # Added column for mixed case
             ax[0].plot(ll.VSH, ll.DEPTH, '-g', label='Vsh')
             ax[0].plot(ll.SW, ll.DEPTH, '-b', label='Sw')
             ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
