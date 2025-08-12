@@ -72,6 +72,10 @@ if uploaded_file is not None:
     # Read data
     logs = pd.read_csv(uploaded_file)
     
+    # Initialize selected points if not exists
+    if 'selected_points' not in st.session_state:
+        st.session_state.selected_points = np.zeros(len(logs), dtype=bool)
+    
     # Depth range selection
     st.header("Well Log Visualization")
     ztop, zbot = st.slider(
@@ -80,6 +84,10 @@ if uploaded_file is not None:
         float(logs.DEPTH.max()), 
         (float(logs.DEPTH.min()), float(logs.DEPTH.max()))
     )
+    
+    # Filter data based on depth range
+    ll = logs.loc[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]
+    selected_in_view = st.session_state.selected_points[logs.index[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]]
     
     # VRH function
     def vrh(volumes, k, mu):
@@ -163,13 +171,6 @@ if uploaded_file is not None:
     ccc = ['#B3B3B3','blue','green','red','#996633']
     cmap_facies = colors.ListedColormap(ccc[0:len(ccc)], 'indexed')
 
-    # Filter data based on depth range
-    ll = logs.loc[(logs.DEPTH>=ztop) & (logs.DEPTH<=zbot)]
-    
-    # Create a column for selection highlighting
-    if 'selected_points' not in st.session_state:
-        st.session_state.selected_points = np.zeros(len(ll), dtype=bool)
-    
     # Display logs - filtered by depth range
     cluster = np.repeat(np.expand_dims(ll['LFC_B'].values,1), 100, 1)
 
@@ -181,27 +182,27 @@ if uploaded_file is not None:
     line3, = ax[0].plot(ll.PHI, ll.DEPTH, '-k', label='phi')
     
     # Highlight selected points
-    sc1 = ax[0].scatter(ll.VSH[st.session_state.selected_points], 
-                       ll.DEPTH[st.session_state.selected_points], 
+    sc1 = ax[0].scatter(ll.VSH[selected_in_view], 
+                       ll.DEPTH[selected_in_view], 
                        50, facecolors='none', edgecolors='yellow', linewidths=1.5)
     
     line4, = ax[1].plot(ll.IP_FRMG, ll.DEPTH, '-r', label='Gas')
     line5, = ax[1].plot(ll.IP_FRMB, ll.DEPTH, '-b', label='Brine')
     line6, = ax[1].plot(ll.IP, ll.DEPTH, '-', color='0.5', label='Original')
-    sc2 = ax[1].scatter(ll.IP_FRMG[st.session_state.selected_points], 
-                       ll.DEPTH[st.session_state.selected_points], 
+    sc2 = ax[1].scatter(ll.IP_FRMG[selected_in_view], 
+                       ll.DEPTH[selected_in_view], 
                        50, facecolors='none', edgecolors='yellow', linewidths=1.5)
     
     line7, = ax[2].plot(ll.VPVS_FRMG, ll.DEPTH, '-r', label='Gas')
     line8, = ax[2].plot(ll.VPVS_FRMB, ll.DEPTH, '-b', label='Brine')
     line9, = ax[2].plot(ll.VPVS, ll.DEPTH, '-', color='0.5', label='Original')
-    sc3 = ax[2].scatter(ll.VPVS_FRMG[st.session_state.selected_points], 
-                       ll.DEPTH[st.session_state.selected_points], 
+    sc3 = ax[2].scatter(ll.VPVS_FRMG[selected_in_view], 
+                       ll.DEPTH[selected_in_view], 
                        50, facecolors='none', edgecolors='yellow', linewidths=1.5)
     
     im = ax[3].imshow(cluster, interpolation='none', aspect='auto', cmap=cmap_facies, vmin=0, vmax=4)
-    sc4 = ax[3].scatter(np.linspace(0, 100, len(ll))[st.session_state.selected_points], 
-                       ll.DEPTH[st.session_state.selected_points], 
+    sc4 = ax[3].scatter(np.linspace(0, 100, len(ll))[selected_in_view], 
+                       ll.DEPTH[selected_in_view], 
                        50, facecolors='none', edgecolors='yellow', linewidths=1.5)
 
     cbar = plt.colorbar(im, ax=ax[3])
@@ -223,6 +224,8 @@ if uploaded_file is not None:
     ax[3].set_xlabel('LFC')
     ax[1].set_yticklabels([]); ax[2].set_yticklabels([]); ax[3].set_yticklabels([]); ax[3].set_xticklabels([])
     
+    st.pyplot(fig)
+
     # Crossplots with lasso selection
     st.header("Crossplots with Lasso Selection")
     
@@ -250,9 +253,10 @@ if uploaded_file is not None:
             self.collection.set_facecolors(self.fc)
             self.canvas.draw_idle()
             
-            # Update the selected points in session state
-            st.session_state.selected_points = np.zeros(len(ll), dtype=bool)
-            st.session_state.selected_points[self.ind] = True
+            # Update the selected points in session state using global indices
+            global_indices = ll.index[self.ind]
+            st.session_state.selected_points = np.zeros(len(logs), dtype=bool)
+            st.session_state.selected_points[global_indices] = True
             st.experimental_rerun()
         
         def disconnect(self):
@@ -292,7 +296,7 @@ if uploaded_file is not None:
     ax2[3].set_title('FRM to Gas')
     
     st.pyplot(fig2)
-    
+
     # AVO Modeling
     st.header("AVO Modeling")
     
