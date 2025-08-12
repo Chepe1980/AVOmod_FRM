@@ -5,7 +5,6 @@ from pyavo.seismodel import wavelet
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import plotly.express as px
-import matplotlib.pyplot as plt
 
 # Set page config
 st.set_page_config(layout="wide", page_title="Rock Physics & AVO Modeling")
@@ -48,7 +47,8 @@ def vrh(volumes, k, mu):
 
 # Fluid substitution function
 def frm(vp1, vs1, rho1, rho_f1, k_f1, rho_f2, k_f2, k0, phi):
-    phi = np.clip(phi, 1e-6, 1.0)
+    phi = np.clip(phi, 1e-6, 1.0)  # Prevent zero porosity
+    
     vp1 = vp1/1000.
     vs1 = vs1/1000.
     mu1 = rho1*vs1**2.
@@ -223,7 +223,46 @@ if uploaded_file is not None:
                                shared_yaxes=True,
                                horizontal_spacing=0.02)
         
-        # Add log traces...
+        # Track 1: VSH, SW, PHI
+        fig_logs.add_trace(go.Scatter(x=ll.VSH, y=ll.DEPTH, 
+                                    name='VSH', line=dict(color='green')),
+                         row=1, col=1)
+        fig_logs.add_trace(go.Scatter(x=ll.SW, y=ll.DEPTH, 
+                                    name='SW', line=dict(color='blue')),
+                         row=1, col=1)
+        fig_logs.add_trace(go.Scatter(x=ll.PHI, y=ll.DEPTH, 
+                                    name='PHI', line=dict(color='black')),
+                         row=1, col=1)
+        
+        # Track 2: IP
+        fig_logs.add_trace(go.Scatter(x=ll.IP_FRMG, y=ll.DEPTH, 
+                                    name='Gas', line=dict(color='red')),
+                         row=1, col=2)
+        fig_logs.add_trace(go.Scatter(x=ll.IP_FRMB, y=ll.DEPTH, 
+                                    name='Brine', line=dict(color='blue')),
+                         row=1, col=2)
+        fig_logs.add_trace(go.Scatter(x=ll.IP, y=ll.DEPTH, 
+                                    name='Original', line=dict(color='gray')),
+                         row=1, col=2)
+        
+        # Track 3: Vp/Vs
+        fig_logs.add_trace(go.Scatter(x=ll.VPVS_FRMG, y=ll.DEPTH, 
+                                    name='Gas', line=dict(color='red')),
+                         row=1, col=3)
+        fig_logs.add_trace(go.Scatter(x=ll.VPVS_FRMB, y=ll.DEPTH, 
+                                    name='Brine', line=dict(color='blue')),
+                         row=1, col=3)
+        fig_logs.add_trace(go.Scatter(x=ll.VPVS, y=ll.DEPTH, 
+                                    name='Original', line=dict(color='gray')),
+                         row=1, col=3)
+        
+        # Track 4: LFC
+        for facies, color in zip(facies_names, ccc):
+            subset = ll[ll['Facies'] == facies]
+            fig_logs.add_trace(go.Scatter(x=[0]*len(subset), y=subset.DEPTH,
+                              mode='markers', marker=dict(color=color, size=5),
+                              name=facies, showlegend=False),
+                           row=1, col=4)
         
         # Highlight selected points in log view
         if st.session_state.selected_points:
@@ -248,8 +287,14 @@ if uploaded_file is not None:
                              yaxis=dict(title='Depth', autorange='reversed'),
                              hovermode='y unified')
         
-        # Add lasso selection to first trace
-        fig_logs.data[0].on_selection(update_selection)
+        fig_logs.update_xaxes(title_text="Vcl/phi/Sw", row=1, col=1, range=[-0.1, 1.1])
+        fig_logs.update_xaxes(title_text="Ip [m/s*g/cc]", row=1, col=2, range=[6000, 15000])
+        fig_logs.update_xaxes(title_text="Vp/Vs", row=1, col=3, range=[1.5, 2])
+        fig_logs.update_xaxes(title_text="LFC", row=1, col=4, showticklabels=False)
+        
+        # Add selection to first trace
+        if len(fig_logs.data) > 0:
+            fig_logs.data[0].on_selection(update_selection)
         st.plotly_chart(fig_logs, use_container_width=True)
 
         st.header("Crossplots with Interactive Selection")
@@ -300,7 +345,103 @@ if uploaded_file is not None:
             st.dataframe(selected_data[['DEPTH', 'VSH', 'PHI', 'SW', 'VP', 'VS', 'RHO']])
 
         st.header("AVO Modeling")
-        # AVO modeling code remains the same...
+        wlt_time, wlt_amp = wavelet.ricker(sample_rate=0.0001, length=0.128, c_freq=wavelet_freq)
+        t_samp = np.arange(0, 0.5, 0.0001)
+        t_middle = 0.2
+        
+        middle_depth = ztop + (zbot - ztop)/2
+        window_size = (zbot - ztop) * 0.1
+        
+        middle_zone = logs.loc[
+            (logs.DEPTH >= middle_depth - window_size) & 
+            (logs.DEPTH <= middle_depth + window_size)
+        ]
+        
+        cases = ['Brine', 'Oil', 'Gas']
+        case_data = {
+            'Brine': {'vp': 'VP_FRMB', 'vs': 'VS_FRMB', 'rho': 'RHO_FRMB', 'color': 'blue'},
+            'Oil': {'vp': 'VP_FRMO', 'vs': 'VS_FRMO', 'rho': 'RHO_FRMO', 'color': 'green'},
+            'Gas': {'vp': 'VP_FRMG', 'vs': 'VS_FRMG', 'rho': 'RHO_FRMG', 'color': 'red'}
+        }
+        
+        fig_avo = make_subplots(rows=1, cols=2, column_widths=[0.3, 0.7],
+                              subplot_titles=(f"Wavelet ({wavelet_freq} Hz)", 
+                                            "AVO Reflection Coefficients"))
+        
+        fig_avo.add_trace(go.Scatter(x=wlt_time, y=wlt_amp, 
+                                   line=dict(color='purple', width=2),
+                                   fill='tozeroy', fillcolor='rgba(128,0,128,0.3)',
+                                   name='Wavelet'),
+                        row=1, col=1)
+        
+        rc_min, rc_max = st.slider(
+            "Reflection Coefficient Range",
+            -0.5, 0.5, (-0.2, 0.2),
+            step=0.01,
+            key='rc_range'
+        )
+        
+        angles = np.arange(min_angle, max_angle + 1, 1)
+        
+        for case in cases:
+            upper_zone = logs.loc[
+                (logs.DEPTH >= middle_depth - 2*window_size) & 
+                (logs.DEPTH < middle_depth - window_size)
+            ]
+            
+            vp_upper = upper_zone['VP'].mean()
+            vs_upper = upper_zone['VS'].mean()
+            rho_upper = upper_zone['RHO'].mean()
+            
+            vp_middle = middle_zone[case_data[case]['vp']].mean()
+            vs_middle = middle_zone[case_data[case]['vs']].mean()
+            rho_middle = middle_zone[case_data[case]['rho']].mean()
+            
+            rc = []
+            for angle in angles:
+                rc.append(calculate_reflection_coefficients(
+                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                ))
+            
+            fig_avo.add_trace(go.Scatter(
+                x=angles, 
+                y=rc,
+                mode='lines+markers',
+                line=dict(color=case_data[case]['color']),
+                marker=dict(size=8),
+                name=f"{case}",
+                showlegend=True
+            ), row=1, col=2)
+        
+        for trace in fig_avo.data:
+            if trace.type == 'scatter':
+                trace.update(
+                    selected=dict(marker=dict(color='black', size=12)),
+                    unselected=dict(marker=dict(opacity=0.7))
+                )
+                trace.on_selection(update_selection)
+        
+        fig_avo.update_layout(height=500, width=1200,
+                            yaxis2=dict(title='Reflection Coefficient', range=[rc_min, rc_max]),
+                            xaxis2=dict(title='Angle (degrees)'),
+                            xaxis1=dict(title='Time (s)'),
+                            yaxis1=dict(title='Amplitude'),
+                            legend=dict(x=0.8, y=0.9))
+        
+        props_text = (f"Depth: {middle_depth:.1f}-{middle_depth+window_size:.1f}m<br>"
+                     f"Shale Vp: {vp_upper:.0f} m/s, Vs: {vs_upper:.0f} m/s, Rho: {rho_upper:.2f} g/cc")
+        
+        fig_avo.add_annotation(
+            text=props_text,
+            align='left',
+            showarrow=False,
+            xref='paper', yref='paper',
+            x=0.05, y=0.95,
+            bgcolor='white',
+            row=1, col=2
+        )
+        
+        st.plotly_chart(fig_avo, use_container_width=True)
 
         st.header("Synthetic Seismic Gathers (Middle Interface)")
         time_min, time_max = st.slider(
@@ -316,12 +457,38 @@ if uploaded_file is not None:
             subplot_titles=('Brine Case', 'Oil Case', 'Gas Case'),
             shared_yaxes=True, 
             shared_xaxes=True,
-            horizontal_spacing=0.1
+            horizontal_spacing=0.15
         )
         
         # Generate synthetic gathers
         for idx, case in enumerate(cases):
-            # Generate synthetic data...
+            upper_zone = logs.loc[
+                (logs.DEPTH >= middle_depth - 2*window_size) & 
+                (logs.DEPTH < middle_depth - window_size)
+            ]
+            
+            vp_upper = upper_zone['VP'].mean()
+            vs_upper = upper_zone['VS'].mean()
+            rho_upper = upper_zone['RHO'].mean()
+            
+            vp_middle = middle_zone[case_data[case]['vp']].mean()
+            vs_middle = middle_zone[case_data[case]['vs']].mean()
+            rho_middle = middle_zone[case_data[case]['rho']].mean()
+            
+            syn_gather = []
+            for angle in angles:
+                rc = calculate_reflection_coefficients(
+                    vp_upper, vp_middle, vs_upper, vs_middle, rho_upper, rho_middle, angle
+                )
+                
+                rc_series = np.zeros(len(t_samp))
+                idx_middle = np.argmin(np.abs(t_samp - t_middle))
+                rc_series[idx_middle] = rc
+                
+                syn_trace = np.convolve(rc_series, wlt_amp, mode='same')
+                syn_gather.append(syn_trace)
+            
+            syn_gather = np.array(syn_gather)
             
             # Add heatmap with external colorbar
             fig_synth.add_trace(go.Heatmap(
@@ -345,7 +512,7 @@ if uploaded_file is not None:
                 for i, angle in enumerate(angles):
                     if i % 5 == 0:  # Show every 5th trace for clarity
                         fig_synth.add_trace(go.Scatter(
-                            x=syn_gather[i] + angle,
+                            x=syn_gather[i] * 5000 + angle,  # Scale for visibility
                             y=t_samp,
                             mode='lines',
                             line=dict(color='black', width=1),
